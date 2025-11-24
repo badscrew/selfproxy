@@ -2,7 +2,9 @@
 
 ## Introduction
 
-SSH Tunnel Proxy is an Android application that enables users to route their mobile device's internet traffic through their own SSH servers using SOCKS5 proxy tunneling. Unlike commercial VPN services, this application gives users complete control over their privacy by allowing them to use their own infrastructure (cloud servers, home servers, or workplace servers) as secure tunnels. The application supports multiple authentication methods, profile management, per-app routing, connection monitoring, and automatic reconnection capabilities.
+SSH Tunnel Proxy is a mobile application (initially Android, with future iOS support planned) that enables users to route their mobile device's internet traffic through their own SSH servers using SOCKS5 proxy tunneling. Unlike commercial VPN services, this application gives users complete control over their privacy by allowing them to use their own infrastructure (cloud servers, home servers, or workplace servers) as secure tunnels. The application supports multiple authentication methods, profile management, per-app routing, connection monitoring, and automatic reconnection capabilities.
+
+**Platform Strategy**: The application is designed with cross-platform architecture in mind, using Kotlin Multiplatform to enable future iOS support while maintaining a single codebase for core business logic. The initial release targets Android, with iOS support planned as a future enhancement.
 
 **Note:** This initial version focuses on SOCKS5 proxy implementation. HTTP proxy support may be considered for future releases to provide additional compatibility options.
 
