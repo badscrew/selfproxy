@@ -1,0 +1,15 @@
+-- SSH Tunnel Proxy Database Schema
+-- This file will be populated with actual tables in subsequent tasks
+
+-- Placeholder query to ensure SQLDelight setup works
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM metadata;
+
+insert:
+INSERT OR REPLACE INTO metadata(key, value)
+VALUES (?, ?);
