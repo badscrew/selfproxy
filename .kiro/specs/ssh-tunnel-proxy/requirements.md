@@ -26,7 +26,7 @@ SSH Tunnel Proxy is an Android application that enables users to route their mob
 
 #### Acceptance Criteria
 
-1. WHEN a user provides valid SSH server credentials (hostname, port, username, and authentication method), THE SSH_Tunnel_Proxy_App SHALL establish an SSH connection to the SSH_Server
+1. WHEN a user provides valid SSH server credentials (hostname, port, username, and private key), THE SSH_Tunnel_Proxy_App SHALL establish an SSH connection to the SSH_Server
 2. WHEN the SSH connection is established, THE SSH_Tunnel_Proxy_App SHALL create a local SOCKS5_Proxy that routes traffic through the tunnel
 3. WHEN the SOCKS5_Proxy is active, THE SSH_Tunnel_Proxy_App SHALL route device traffic through the SSH_Server
 4. WHEN a user disconnects the tunnel, THE SSH_Tunnel_Proxy_App SHALL terminate the SSH connection and stop the SOCKS5_Proxy
@@ -46,11 +46,11 @@ SSH Tunnel Proxy is an Android application that enables users to route their mob
 
 ### Requirement 3
 
-**User Story:** As a security-conscious user, I want to authenticate using SSH keys, so that I can maintain secure access without using passwords.
+**User Story:** As a security-conscious user, I want to authenticate using SSH keys, so that I can maintain secure access with strong cryptographic authentication.
 
 #### Acceptance Criteria
 
-1. WHEN a user selects private key authentication, THE SSH_Tunnel_Proxy_App SHALL support RSA, ECDSA, and Ed25519 key formats
+1. WHEN a user provides authentication credentials, THE SSH_Tunnel_Proxy_App SHALL support RSA, ECDSA, and Ed25519 private key formats
 2. WHEN a user provides a private key file, THE SSH_Tunnel_Proxy_App SHALL parse and validate the key format
 3. WHEN a user provides a passphrase-protected private key, THE SSH_Tunnel_Proxy_App SHALL prompt for the passphrase and decrypt the key
 4. WHEN a user stores SSH credentials, THE SSH_Tunnel_Proxy_App SHALL encrypt the credentials in the Credential_Store
@@ -80,7 +80,7 @@ SSH Tunnel Proxy is an Android application that enables users to route their mob
 4. WHEN the user modifies app routing settings, THE SSH_Tunnel_Proxy_App SHALL apply the changes without requiring a full reconnection
 5. WHEN the device has root access, THE SSH_Tunnel_Proxy_App SHALL enable per-app proxying without using the VPN_Service
 
-### Requirement 6
+### Requirement 6 (Optional - Post-MVP)
 
 **User Story:** As a user monitoring my usage, I want to see real-time connection statistics, so that I can track bandwidth consumption and connection health.
 
@@ -140,7 +140,7 @@ SSH Tunnel Proxy is an Android application that enables users to route their mob
 4. WHEN a user sets a custom SOCKS5 port, THE SSH_Tunnel_Proxy_App SHALL create the SOCKS5_Proxy on the specified local port
 5. WHEN a user enables strict host key checking, THE Connection_Manager SHALL verify the SSH_Server host key against stored known hosts
 
-### Requirement 11
+### Requirement 11 (Optional - Post-MVP)
 
 **User Story:** As a user who needs the tunnel to start automatically, I want the app to connect on boot or network change, so that my protection is always active.
 

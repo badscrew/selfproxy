@@ -14,7 +14,7 @@ SSH Tunnel Proxy is built on a simple principle: you shouldn't have to trust str
 
 **How It Works**
 
-Simply provide your SSH server address and authentication key, and SSH Tunnel Proxy handles the rest. The app establishes a secure SSH tunnel and creates a local SOCKS5 proxy that routes your traffic through your server. No middlemen, no data collection, no subscription fees.
+Simply provide your SSH server address and private key, and SSH Tunnel Proxy handles the rest. The app establishes a secure SSH tunnel and creates a local SOCKS5 proxy that routes your traffic through your server. No middlemen, no data collection, no subscription fees.
 
 **Key Features**
 
@@ -61,7 +61,7 @@ A: Yes. Using SSH tunnels is a standard networking practice. However, you're res
 
 **Q: What SSH authentication methods are supported?**
 
-A: The app supports password authentication, private key authentication (RSA, ECDSA, Ed25519), and private key with passphrase. We recommend using key-based authentication for better security.
+A: The app supports private key authentication only (RSA, ECDSA, Ed25519), including keys protected with passphrases. Password authentication is not supported to encourage secure authentication practices.
 
 **Q: Does this require root access?**
 
@@ -107,7 +107,7 @@ A: The app is fully open source. You can review the code, build it yourself, or 
 
 A: You'll need:
 1. An SSH server (cloud instance, home server, etc.)
-2. SSH credentials (username and private key or password)
+2. SSH credentials (username and private key)
 3. The SSH Tunnel Proxy app
 
 Enter your server details in the app, tap connect, and you're secured.
