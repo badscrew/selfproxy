@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "C:\\Users\\user\\.local\\bin\\uvx.exe",
+      "args": ["mcp-server-fetch"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "brave-search": {
+      "command": "C:\\Users\\user\\.local\\bin\\uvx.exe",
+      "args": ["brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "YOUR_API_KEY_HERE"
+      },
+      "disabled": true,
+      "autoApprove": []
+    }
+  }
+}
