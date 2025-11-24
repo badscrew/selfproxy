@@ -128,6 +128,10 @@ A: Yes, with limitations. In VPN mode (non-root), you can exclude apps from the 
 
 A: IPv6 support depends on your SSH server configuration. The app supports IPv6 if your server does.
 
+**Q: Will you support HTTP proxy in addition to SOCKS5?**
+
+A: Currently, the app uses SOCKS5 proxy, which works well with SSH's native dynamic port forwarding. HTTP proxy support is being considered for future releases to provide additional compatibility options for specific use cases.
+
 ### Troubleshooting Questions
 
 **Q: I can't connect to my server. What should I check?**
