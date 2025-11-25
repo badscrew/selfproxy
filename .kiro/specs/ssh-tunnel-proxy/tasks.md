@@ -92,7 +92,8 @@
   - Configure AndroidManifest with required permissions
   - _Requirements: Foundation for UI requirements_
 
-- [-] 5. Implement Android Credential Store
+- [x] 5. Implement Android Credential Store
+
 
 
 
