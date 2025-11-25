@@ -365,10 +365,15 @@
 
 
 
+
   - **Property 28: DNS routing configuration**
   - **Validates: Requirements 10.3**
 
-- [ ]* 15.3 Write property test for custom SOCKS5 port
+- [x] 15.3 Write property test for custom SOCKS5 port
+
+
+
+
   - **Property 29: Custom SOCKS5 port configuration**
   - **Validates: Requirements 10.4**
 
