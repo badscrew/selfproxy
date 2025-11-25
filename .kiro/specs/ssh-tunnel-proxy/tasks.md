@@ -37,7 +37,11 @@
   - **Property 6: Profile creation round-trip**
   - **Validates: Requirements 2.1**
 
-- [ ] 3. Implement shared Profile Repository
+- [x] 3. Implement shared Profile Repository
+
+
+
+
   - Create ProfileRepository interface in commonMain
   - Implement ProfileRepositoryImpl using SQLDelight in commonMain
   - Implement createProfile, getProfile, getAllProfiles, updateProfile, deleteProfile methods

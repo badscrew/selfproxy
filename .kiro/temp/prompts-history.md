@@ -319,6 +319,49 @@ The three documents (requirements, design, tasks) are highly coherent and well-a
 3. **Test Reports**: HTML reports available at `shared/build/reports/tests/testDebugUnitTest/index.html`
 4. **Serialization**: Data classes need `@Serializable` annotation for kotlinx.serialization to work
 
+**Prompt:** "there are still uncommited files"
+- Checked git status and found tasks.md was modified but not committed
+- Committed tasks.md with task 2.1 status update
+- Discovered some strange untracked files with garbled names (likely temporary git artifacts)
+- Verified working tree is clean
+
+**Files Modified:**
+- `.kiro/specs/ssh-tunnel-proxy/tasks.md` (task status update)
+
+**Commit:**
+- `93fb529`: "chore: update task 2.1 status to completed with PBT passed"
+
+**Prompt:** "why are you calling git commands with cmd /c ?"
+- Realized I was unnecessarily wrapping git commands with `cmd /c`
+- This was an attempt to avoid pager issues but not the right approach
+- Switched back to calling git directly
+
+**Prompt:** "what is the best way to avoid being stuck in the pager when run on powershell?"
+- Discussed best practices for avoiding git pager in PowerShell automation
+- Recommended using `--no-pager` flag as the best solution
+- Explained alternatives: environment variables and global config
+- Provided examples of commands that commonly trigger pager
+
+**Prompt:** "yes, update this steering doc"
+- Updated `.kiro/steering/git-practices.md` with pager avoidance guidance
+- Added new section "Avoiding Pager Issues in PowerShell" at the beginning
+- Documented recommended solution: `git --no-pager <command>`
+- Listed commands that commonly trigger pager vs those that don't
+- Provided best practices for automation and scripting
+- Committed changes
+
+**Files Modified:**
+- `.kiro/steering/git-practices.md`
+
+**Commit:**
+- `a683df8`: "docs(git): add PowerShell pager avoidance guidance"
+
+## Key Learnings (Continued)
+
+5. **Git Pager in PowerShell**: Use `git --no-pager` for commands that display output in automation to avoid blocking on pager
+6. **Prompt History Maintenance**: Must update prompts-history.md after each significant interaction
+7. **Git in Automation**: Don't wrap git commands unnecessarily; use built-in flags like `--no-pager` instead
+
 ## Next Steps
 
 Continue with task 3: Implement shared Profile Repository
