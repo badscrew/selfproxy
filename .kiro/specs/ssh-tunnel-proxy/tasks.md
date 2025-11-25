@@ -355,10 +355,16 @@
 
 
 
+
   - **Property 27: Compression negotiation**
   - **Validates: Requirements 10.2**
 
-- [ ]* 15.2 Write property test for DNS routing
+- [x] 15.2 Write property test for DNS routing
+
+
+
+
+
   - **Property 28: DNS routing configuration**
   - **Validates: Requirements 10.3**
 
