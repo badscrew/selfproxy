@@ -96,6 +96,7 @@ sealed class SSHError : Exception() {
     data class PortForwardingDisabled(override val message: String) : SSHError()
     data class InvalidKey(override val message: String) : SSHError()
     data class UnknownHost(override val message: String) : SSHError()
+    data class NetworkUnavailable(override val message: String) : SSHError()
     data class SessionClosed(override val message: String) : SSHError()
     data class Unknown(override val message: String, override val cause: Throwable? = null) : SSHError()
 }

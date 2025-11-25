@@ -146,6 +146,14 @@ sealed class ConnectionError {
     ) : ConnectionError()
     
     /**
+     * Network is unavailable or unreachable.
+     */
+    data class NetworkUnavailable(
+        override val message: String,
+        override val cause: Throwable? = null
+    ) : ConnectionError()
+    
+    /**
      * Credential retrieval failed.
      */
     data class CredentialError(

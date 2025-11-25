@@ -179,76 +179,97 @@ class ConnectionViewModel @Inject constructor(
         return when (error) {
             is ConnectionError.AuthenticationFailed -> ErrorDetails(
                 title = "Authentication Failed",
-                message = "The SSH server rejected your credentials.",
+                message = error.message,
                 suggestions = listOf(
                     "Verify your username is correct",
-                    "Check that the SSH key matches the server",
-                    "Ensure the key is in the correct format (RSA, ECDSA, or ED25519)"
+                    "Ensure your SSH key is authorized on the server (check ~/.ssh/authorized_keys)",
+                    "Check that the key format matches what the server expects",
+                    "Verify the key file is not corrupted"
                 )
             )
             is ConnectionError.ConnectionTimeout -> ErrorDetails(
                 title = "Connection Timeout",
-                message = "Could not connect to the SSH server within the timeout period.",
+                message = error.message,
                 suggestions = listOf(
-                    "Check your internet connection",
-                    "Verify the server is running and accessible",
-                    "Check if a firewall is blocking the connection",
-                    "Try increasing the connection timeout in settings"
+                    "Check your internet connection (WiFi or mobile data)",
+                    "Verify the server is online and accessible",
+                    "Check if a firewall is blocking SSH connections (port 22 or custom port)",
+                    "Try increasing the connection timeout in settings",
+                    "Verify the server address and port are correct"
                 )
             )
             is ConnectionError.HostUnreachable -> ErrorDetails(
                 title = "Host Unreachable",
-                message = "The SSH server could not be reached.",
+                message = error.message,
                 suggestions = listOf(
                     "Verify the hostname or IP address is correct",
                     "Check your internet connection",
-                    "Ensure the server is online and accessible"
+                    "Ensure the server is online and accessible",
+                    "Verify the port number (default SSH port is 22)",
+                    "Check if a firewall is blocking the connection"
                 )
             )
             is ConnectionError.PortForwardingDisabled -> ErrorDetails(
                 title = "Port Forwarding Disabled",
-                message = "The SSH server has port forwarding disabled.",
+                message = error.message,
                 suggestions = listOf(
-                    "Contact your server administrator",
-                    "Enable AllowTcpForwarding in sshd_config on the server",
+                    "Contact your server administrator to enable port forwarding",
+                    "Ask them to add 'AllowTcpForwarding yes' to /etc/ssh/sshd_config",
+                    "After changes, the SSH service needs to be restarted",
                     "Try a different SSH server that supports port forwarding"
                 )
             )
             is ConnectionError.InvalidKey -> ErrorDetails(
                 title = "Invalid SSH Key",
-                message = "The SSH key format is invalid or corrupted.",
+                message = error.message,
                 suggestions = listOf(
                     "Verify the key file is not corrupted",
-                    "Ensure the key is in a supported format (RSA, ECDSA, ED25519)",
-                    "Try regenerating the SSH key"
+                    "Ensure the key is in a supported format (RSA, ECDSA, or Ed25519)",
+                    "If passphrase-protected, verify the passphrase is correct",
+                    "Try regenerating the SSH key pair",
+                    "Ensure the key has proper permissions (600 for private key)"
                 )
             )
             is ConnectionError.UnknownHost -> ErrorDetails(
                 title = "Unknown Host",
-                message = "Could not resolve the hostname.",
+                message = error.message,
                 suggestions = listOf(
-                    "Check the hostname spelling",
-                    "Verify DNS is working correctly",
-                    "Try using an IP address instead of hostname"
+                    "Check the hostname spelling carefully",
+                    "Verify your DNS is working (try opening a website)",
+                    "Try using an IP address instead of hostname",
+                    "Check if you need to be on a specific network (VPN, corporate network)"
+                )
+            )
+            is ConnectionError.NetworkUnavailable -> ErrorDetails(
+                title = "Network Unavailable",
+                message = error.message,
+                suggestions = listOf(
+                    "Check your WiFi or mobile data connection",
+                    "Try switching between WiFi and mobile data",
+                    "Verify you have internet access (try opening a website)",
+                    "If on a restricted network, it may be blocking SSH connections",
+                    "Check if airplane mode is enabled"
                 )
             )
             is ConnectionError.CredentialError -> ErrorDetails(
                 title = "Credential Error",
-                message = "Failed to retrieve SSH credentials from secure storage.",
+                message = error.message,
                 suggestions = listOf(
                     "Try editing the profile and re-selecting the SSH key",
-                    "Check that the key file still exists",
-                    "Verify app permissions"
+                    "Check that the key file still exists on your device",
+                    "Verify the app has permission to access the key file",
+                    "Try creating a new profile with the same settings"
                 )
             )
             is ConnectionError.Unknown, null -> ErrorDetails(
                 title = "Connection Error",
-                message = error?.message ?: "An unknown error occurred",
+                message = error?.message ?: "An unknown error occurred while connecting to the SSH server.",
                 suggestions = listOf(
                     "Check your internet connection",
                     "Verify all profile settings are correct",
                     "Try disconnecting and reconnecting",
-                    "Check the diagnostic logs for more details"
+                    "Enable verbose logging in settings for more details",
+                    "Check the diagnostic logs for technical information"
                 )
             )
         }

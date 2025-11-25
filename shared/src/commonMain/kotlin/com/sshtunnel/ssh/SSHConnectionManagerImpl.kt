@@ -185,6 +185,10 @@ class SSHConnectionManagerImpl(
                 error.message,
                 error
             )
+            is SSHError.NetworkUnavailable -> ConnectionError.NetworkUnavailable(
+                error.message,
+                error
+            )
             else -> ConnectionError.Unknown(
                 error?.message ?: "Unknown error occurred",
                 error
