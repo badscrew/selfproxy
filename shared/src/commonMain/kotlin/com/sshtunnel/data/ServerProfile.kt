@@ -1,5 +1,7 @@
 package com.sshtunnel.data
 
+import kotlinx.serialization.Serializable
+
 /**
  * Represents a saved SSH server profile with connection details.
  * 
@@ -12,6 +14,7 @@ package com.sshtunnel.data
  * @property createdAt Timestamp when the profile was created (milliseconds since epoch)
  * @property lastUsed Timestamp when the profile was last used (milliseconds since epoch, null if never used)
  */
+@Serializable
 data class ServerProfile(
     val id: Long = 0,
     val name: String,
@@ -26,6 +29,7 @@ data class ServerProfile(
 /**
  * Supported SSH private key types.
  */
+@Serializable
 enum class KeyType {
     RSA,
     ECDSA,

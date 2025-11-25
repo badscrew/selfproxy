@@ -19,6 +19,7 @@
 
 
 
+
   - Create ServerProfile data class in commonMain
   - Create AppRoutingConfig data class in commonMain
   - Create ConnectionSettings data class in commonMain
@@ -26,7 +27,12 @@
   - Define SQLDelight schema for app_routing_config table
   - _Requirements: 2.1, 2.2, 2.5, 5.1_
 
-- [ ]* 2.1 Write property test for profile data model
+- [x] 2.1 Write property test for profile data model
+
+
+
+
+
   - **Property 6: Profile creation round-trip**
   - **Validates: Requirements 2.1**
 
