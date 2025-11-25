@@ -1,15 +1,60 @@
 -- SSH Tunnel Proxy Database Schema
--- This file will be populated with actual tables in subsequent tasks
 
--- Placeholder query to ensure SQLDelight setup works
-CREATE TABLE IF NOT EXISTS metadata (
-    key TEXT PRIMARY KEY NOT NULL,
-    value TEXT NOT NULL
+-- Server Profiles Table
+-- Stores SSH server connection details and credentials
+CREATE TABLE server_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    port INTEGER NOT NULL DEFAULT 22,
+    username TEXT NOT NULL,
+    keyType TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    lastUsed INTEGER
 );
 
-selectAll:
-SELECT * FROM metadata;
+-- App Routing Configuration Table
+-- Stores per-app routing settings for each profile
+CREATE TABLE app_routing_config (
+    profileId INTEGER PRIMARY KEY NOT NULL,
+    excludedPackages TEXT NOT NULL,
+    routingMode TEXT NOT NULL,
+    FOREIGN KEY (profileId) REFERENCES server_profiles(id) ON DELETE CASCADE
+);
 
-insert:
-INSERT OR REPLACE INTO metadata(key, value)
-VALUES (?, ?);
+-- Server Profiles Queries
+
+selectAllProfiles:
+SELECT * FROM server_profiles;
+
+selectProfileById:
+SELECT * FROM server_profiles WHERE id = ?;
+
+insertProfile:
+INSERT INTO server_profiles(name, hostname, port, username, keyType, createdAt, lastUsed)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updateProfile:
+UPDATE server_profiles
+SET name = ?, hostname = ?, port = ?, username = ?, keyType = ?, lastUsed = ?
+WHERE id = ?;
+
+updateLastUsed:
+UPDATE server_profiles
+SET lastUsed = ?
+WHERE id = ?;
+
+deleteProfile:
+DELETE FROM server_profiles WHERE id = ?;
+
+-- App Routing Configuration Queries
+
+selectRoutingConfig:
+SELECT * FROM app_routing_config WHERE profileId = ?;
+
+insertRoutingConfig:
+INSERT OR REPLACE INTO app_routing_config(profileId, excludedPackages, routingMode)
+VALUES (?, ?, ?);
+
+deleteRoutingConfig:
+DELETE FROM app_routing_config WHERE profileId = ?;

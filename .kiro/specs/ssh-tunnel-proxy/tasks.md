@@ -15,7 +15,10 @@
   - Add core dependencies (Kotlin Coroutines, Ktor, kotlinx-serialization)
   - _Requirements: Foundation for all requirements_
 
-- [ ] 2. Define shared data models and database schema
+- [x] 2. Define shared data models and database schema
+
+
+
   - Create ServerProfile data class in commonMain
   - Create AppRoutingConfig data class in commonMain
   - Create ConnectionSettings data class in commonMain
