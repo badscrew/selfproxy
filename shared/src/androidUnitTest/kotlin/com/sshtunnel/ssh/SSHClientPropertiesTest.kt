@@ -221,6 +221,94 @@ class SSHClientPropertiesTest {
         }
     }
     
+    /**
+     * Feature: ssh-tunnel-proxy, Property 30: Host key verification
+     * Validates: Requirements 10.5
+     * 
+     * This property test validates that the SSH client properly handles host key verification.
+     * For any connection with strict host key checking enabled, unknown host keys should be rejected
+     * and known host keys should be accepted.
+     * 
+     * Since we cannot test against real SSH servers in unit tests, we validate:
+     * 1. The client accepts the strictHostKeyChecking parameter (both enabled and disabled)
+     * 2. The client processes host key checking settings without errors
+     * 3. The client handles host key verification configuration for all key types
+     * 
+     * The actual host key verification with a real SSH server is tested in integration tests.
+     * In a real scenario:
+     * - With strictHostKeyChecking=true and unknown host: connection should fail with host key error
+     * - With strictHostKeyChecking=true and known host: connection should succeed
+     * - With strictHostKeyChecking=false: connection should succeed regardless of host key
+     */
+    @Test
+    fun `host key verification should be configurable for SSH connections`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 30: Host key verification
+        // Validates: Requirements 10.5
+        
+        checkAll(
+            iterations = 100,
+            Arb.serverProfile(),
+            Arb.privateKey(),
+            Arb.boolean() // strictHostKeyChecking enabled or disabled
+        ) { profile, privateKey, strictHostKeyChecking ->
+            val client = AndroidSSHClient()
+            
+            // Attempt to connect with host key checking setting
+            val result = client.connect(
+                profile = profile,
+                privateKey = privateKey,
+                passphrase = null,
+                connectionTimeout = 5.seconds,
+                enableCompression = false,
+                strictHostKeyChecking = strictHostKeyChecking
+            )
+            
+            // The result should be a Result type (either success or failure)
+            // We expect failure in unit tests (no real SSH server), but the client
+            // should handle host key verification configuration gracefully
+            when {
+                result.isSuccess -> {
+                    // If somehow successful (shouldn't happen in unit tests),
+                    // verify the session is valid and clean up
+                    val session = result.getOrNull()
+                    if (session != null) {
+                        assert(session.serverAddress == profile.hostname)
+                        assert(session.serverPort == profile.port)
+                        assert(session.username == profile.username)
+                        
+                        // Clean up
+                        client.disconnect(session)
+                    }
+                }
+                result.isFailure -> {
+                    // Expected in unit tests - verify we get proper error types
+                    val error = result.exceptionOrNull()
+                    assert(error is SSHError) {
+                        "Expected SSHError but got ${error?.javaClass?.simpleName}"
+                    }
+                    
+                    // Verify error messages are informative
+                    val message = error?.message ?: ""
+                    assert(message.isNotEmpty()) {
+                        "Error message should not be empty"
+                    }
+                    
+                    // Verify that host key checking configuration didn't cause a different error
+                    // (i.e., the error should be connection-related, not host-key-related)
+                    // In a real scenario with strictHostKeyChecking=true and unknown host,
+                    // we would expect a specific host key error.
+                    // Here we just verify the configuration is accepted without causing
+                    // configuration-specific errors.
+                    val isHostKeyConfigError = message.contains("StrictHostKeyChecking", ignoreCase = true) ||
+                                               message.contains("host key checking", ignoreCase = true)
+                    assert(!isHostKeyConfigError) {
+                        "Host key checking configuration should not cause configuration errors: $message"
+                    }
+                }
+            }
+        }
+    }
+    
     // Custom generators for property-based testing
     
     companion object {

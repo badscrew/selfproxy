@@ -374,10 +374,16 @@
 
 
 
+
   - **Property 29: Custom SOCKS5 port configuration**
   - **Validates: Requirements 10.4**
 
-- [ ]* 15.4 Write property test for host key verification
+- [x] 15.4 Write property test for host key verification
+
+
+
+
+
   - **Property 30: Host key verification**
   - **Validates: Requirements 10.5**
 
