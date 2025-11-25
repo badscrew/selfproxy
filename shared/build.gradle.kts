@@ -48,6 +48,9 @@ kotlin {
                 implementation("io.kotest:kotest-framework-engine:5.8.0")
                 implementation("io.kotest:kotest-assertions-core:5.8.0")
                 implementation("io.kotest:kotest-property:5.8.0")
+                
+                // SQLDelight JDBC driver for in-memory testing
+                implementation("app.cash.sqldelight:sqlite-driver:2.0.1")
             }
         }
         

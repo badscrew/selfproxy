@@ -42,13 +42,19 @@
 
 
 
+
   - Create ProfileRepository interface in commonMain
   - Implement ProfileRepositoryImpl using SQLDelight in commonMain
   - Implement createProfile, getProfile, getAllProfiles, updateProfile, deleteProfile methods
   - Add error handling with Result types
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ]* 3.1 Write property test for profile repository
+- [x] 3.1 Write property test for profile repository
+
+
+
+
+
   - **Property 7: Profile listing completeness**
   - **Validates: Requirements 2.2**
 

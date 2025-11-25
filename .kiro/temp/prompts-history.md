@@ -366,3 +366,60 @@ The three documents (requirements, design, tasks) are highly coherent and well-a
 
 Continue with task 3: Implement shared Profile Repository
 
+
+### Task 3: Implement Shared Profile Repository
+
+**Prompt:** "Implement the task from the markdown document at .kiro/specs/ssh-tunnel-proxy/tasks.md: 3. Implement shared Profile Repository"
+- Started implementation of task 3
+- Created ProfileRepository interface in commonMain with CRUD operations
+- Implemented ProfileRepositoryImpl using SQLDelight with:
+  - createProfile: Inserts profile and returns generated ID
+  - getProfile: Retrieves profile by ID
+  - getAllProfiles: Returns all saved profiles
+  - updateProfile: Updates existing profile
+  - deleteProfile: Removes profile from storage
+- Added error handling with Result types
+- Created ProfileRepositoryException for repository-specific errors
+- Created DatabaseDriverFactory expect/actual pattern for platform-specific database drivers
+- Implemented AndroidDatabaseDriverFactory using AndroidSqliteDriver
+- All operations use coroutines with Dispatchers.Default for thread safety
+- Build successful with no diagnostics issues
+- All tests passed
+- Created Git commit: `0b67ad7` - "feat(task-3): implement shared Profile Repository"
+
+**Files Created:**
+- `shared/src/commonMain/kotlin/com/sshtunnel/repository/ProfileRepository.kt`
+- `shared/src/commonMain/kotlin/com/sshtunnel/repository/ProfileRepositoryImpl.kt`
+- `shared/src/commonMain/kotlin/com/sshtunnel/db/DatabaseDriverFactory.kt`
+- `shared/src/androidMain/kotlin/com/sshtunnel/db/DatabaseDriverFactory.android.kt`
+
+**Files Modified:**
+- `.kiro/specs/ssh-tunnel-proxy/tasks.md` (marked task 3 as completed)
+
+**Technical Implementation Details:**
+- Used SQLDelight's coroutines extensions (asFlow, mapToList, mapToOneOrNull)
+- Implemented proper type conversions between SQLDelight types (Long) and Kotlin types (Int)
+- Used withContext(Dispatchers.Default) for all database operations
+- Handled edge cases: profile with id=0 cannot be updated, null returns for missing profiles
+- Created custom exception type for better error handling
+
+**Commit:**
+- `0b67ad7`: "feat(task-3): implement shared Profile Repository"
+
+## Key Decisions Made (This Session - Continued)
+
+4. **Repository Pattern**: Interface in commonMain, implementation using SQLDelight
+5. **Error Handling**: Result types for operations that can fail, null for queries
+6. **Database Driver**: Expect/actual pattern for platform-specific driver creation
+7. **Thread Safety**: All operations use Dispatchers.Default for background execution
+
+## Technical Learnings (Continued)
+
+8. **SQLDelight Integration**: Use coroutines extensions for Flow-based queries
+9. **Type Conversions**: SQLDelight uses Long for INTEGER columns, must convert to Int where needed
+10. **Last Insert ID**: SQLDelight doesn't provide direct lastInsertRowId, must query max ID
+11. **Expect/Actual Classes**: Beta feature in Kotlin, generates warnings but works correctly
+
+## Next Steps
+
+Task 3 is complete. Ready for next task or user direction.
