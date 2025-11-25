@@ -2,8 +2,10 @@ package com.sshtunnel.android.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.sshtunnel.android.ui.screens.connection.ConnectionScreen
 import com.sshtunnel.android.ui.screens.profiles.ProfilesScreen
 import com.sshtunnel.android.ui.screens.settings.SettingsScreen
@@ -23,8 +25,8 @@ fun NavGraph(
     ) {
         composable(Screen.Profiles.route) {
             ProfilesScreen(
-                onNavigateToConnection = {
-                    navController.navigate(Screen.Connection.route)
+                onNavigateToConnection = { profileId ->
+                    navController.navigate(Screen.Connection.createRoute(profileId))
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
@@ -32,11 +34,21 @@ fun NavGraph(
             )
         }
         
-        composable(Screen.Connection.route) {
+        composable(
+            route = Screen.Connection.route,
+            arguments = listOf(
+                navArgument("profileId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getLong("profileId")?.takeIf { it != -1L }
             ConnectionScreen(
                 onNavigateBack = {
                     navController.popBackStack()
-                }
+                },
+                profileId = profileId
             )
         }
         

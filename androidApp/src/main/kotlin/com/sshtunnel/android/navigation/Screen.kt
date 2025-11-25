@@ -5,6 +5,8 @@ package com.sshtunnel.android.navigation
  */
 sealed class Screen(val route: String) {
     object Profiles : Screen("profiles")
-    object Connection : Screen("connection")
+    object Connection : Screen("connection/{profileId}") {
+        fun createRoute(profileId: Long) = "connection/$profileId"
+    }
     object Settings : Screen("settings")
 }

@@ -28,7 +28,7 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfilesScreen(
-    onNavigateToConnection: () -> Unit,
+    onNavigateToConnection: (Long) -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: ProfilesViewModel = hiltViewModel()
 ) {
@@ -86,8 +86,7 @@ fun ProfilesScreen(
                     ProfilesList(
                         profiles = state.profiles,
                         onProfileClick = { profile ->
-                            // TODO: Navigate to connection with selected profile
-                            onNavigateToConnection()
+                            onNavigateToConnection(profile.id)
                         },
                         onEditClick = { profile ->
                             viewModel.showProfileDialog(profile)

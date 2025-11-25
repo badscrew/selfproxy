@@ -458,6 +458,7 @@
 
 
 
+
   - Create profile list screen with all saved profiles
   - Add profile creation form (name, hostname, port, username, key file picker)
   - Add profile edit functionality
@@ -466,7 +467,9 @@
   - Display profile details (name, server address)
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 20. Implement Connection UI
+- [x] 20. Implement Connection UI
+
+
   - Create main connection screen
   - Display connection status (disconnected, connecting, connected, error)
   - Add connect/disconnect button
