@@ -241,11 +241,18 @@ class AndroidSSHKeyParser : SSHKeyParser {
         try {
             tempFile.writeBytes(keyData)
             
-            return if (passphrase != null) {
-                KeyPair.load(jsch, tempFile.absolutePath, passphrase)
-            } else {
-                KeyPair.load(jsch, tempFile.absolutePath)
+            // Load the key pair
+            val keyPair = KeyPair.load(jsch, tempFile.absolutePath)
+            
+            // If passphrase is provided, decrypt the key
+            if (passphrase != null && keyPair.isEncrypted) {
+                val decrypted = keyPair.decrypt(passphrase)
+                if (!decrypted) {
+                    throw JSchException("Failed to decrypt key with provided passphrase")
+                }
             }
+            
+            return keyPair
         } finally {
             // Clean up temp file
             tempFile.delete()

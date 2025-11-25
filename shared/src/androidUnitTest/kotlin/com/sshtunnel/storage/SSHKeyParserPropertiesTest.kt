@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Property-based tests for SSH key parsing and validation.
@@ -40,11 +41,13 @@ class SSHKeyParserPropertiesTest {
      * 
      * Note: This test focuses on RSA keys due to JSch 0.1.55 limitations.
      * ECDSA and Ed25519 support is validated through detection tests.
+     * 
+     * Note: Reduced iterations to 10 due to RSA key generation being slow (especially 4096-bit keys).
      */
     @Test
-    fun `RSA keys should be parsed successfully`() = runTest {
+    fun `RSA keys should be parsed successfully`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 100,
+            iterations = 10,
             Arb.rsaKeySize()
         ) { keySize ->
             // Generate a valid RSA SSH key
@@ -70,9 +73,9 @@ class SSHKeyParserPropertiesTest {
      * For RSA keys, the parser should correctly detect the key type from the key data.
      */
     @Test
-    fun `key type detection should identify RSA format`() = runTest {
+    fun `key type detection should identify RSA format`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 100,
+            iterations = 10,
             Arb.rsaKeySize()
         ) { keySize ->
             // Generate a valid RSA SSH key
@@ -94,9 +97,9 @@ class SSHKeyParserPropertiesTest {
      * For RSA keys, the validation should pass.
      */
     @Test
-    fun `key format validation should accept RSA format`() = runTest {
+    fun `key format validation should accept RSA format`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 100,
+            iterations = 10,
             Arb.rsaKeySize()
         ) { keySize ->
             // Generate a valid RSA SSH key
@@ -141,9 +144,9 @@ class SSHKeyParserPropertiesTest {
      * should successfully decrypt and parse the key.
      */
     @Test
-    fun `passphrase-protected RSA keys should decrypt with correct passphrase`() = runTest {
+    fun `passphrase-protected RSA keys should decrypt with correct passphrase`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 50,
+            iterations = 10,
             Arb.rsaKeySize(),
             Arb.passphrase()
         ) { keySize, passphrase ->
@@ -174,9 +177,9 @@ class SSHKeyParserPropertiesTest {
      * should fail with PassphraseRequiredException.
      */
     @Test
-    fun `passphrase-protected RSA keys should fail without passphrase`() = runTest {
+    fun `passphrase-protected RSA keys should fail without passphrase`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 50,
+            iterations = 10,
             Arb.rsaKeySize(),
             Arb.passphrase()
         ) { keySize, passphrase ->
@@ -200,9 +203,9 @@ class SSHKeyParserPropertiesTest {
      * should fail with IncorrectPassphraseException.
      */
     @Test
-    fun `passphrase-protected RSA keys should fail with incorrect passphrase`() = runTest {
+    fun `passphrase-protected RSA keys should fail with incorrect passphrase`() = runTest(timeout = 60.seconds) {
         checkAll(
-            iterations = 50,
+            iterations = 10,
             Arb.rsaKeySize(),
             Arb.passphrase(),
             Arb.passphrase()
