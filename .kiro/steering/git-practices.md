@@ -4,6 +4,80 @@ inclusion: always
 
 # Git Best Practices
 
+## Avoiding Pager Issues in PowerShell
+
+When running git commands in PowerShell (especially in automation or AI agents), git may open a pager (like `less`) that blocks execution and waits for user input. This is problematic for automated workflows.
+
+### Recommended Solution: Use `--no-pager`
+
+The best approach is to use the `--no-pager` flag for commands that might trigger a pager:
+
+```powershell
+# View logs without pager
+git --no-pager log
+
+# View specific commit
+git --no-pager log -1
+
+# View diff
+git --no-pager diff
+
+# View file content
+git --no-pager show HEAD:path/to/file
+
+# View status (usually doesn't page, but safe to use)
+git --no-pager status
+```
+
+**Why this is best:**
+- ✅ Explicit and clear intent
+- ✅ No global state modification
+- ✅ Works consistently across all git commands
+- ✅ No environment variable management needed
+- ✅ Safe for automation and scripting
+
+### Alternative Solutions
+
+**Option 2: Set environment variable for session**
+```powershell
+$env:GIT_PAGER = ''
+git log  # Won't use pager
+```
+
+**Option 3: Configure git globally (not recommended for automation)**
+```powershell
+git config --global core.pager ''
+```
+
+### Commands That Commonly Trigger Pager
+
+Be especially careful with these commands:
+- `git log`
+- `git diff`
+- `git show`
+- `git blame`
+- `git branch -v` (with many branches)
+
+### Commands That Usually Don't Page
+
+These are generally safe without `--no-pager`:
+- `git status`
+- `git add`
+- `git commit`
+- `git push`
+- `git pull`
+
+### Best Practice for Automation
+
+When writing scripts or automation (including AI agents), always use `--no-pager` for any command that displays output:
+
+```powershell
+# Good automation practice
+git --no-pager log -1 --oneline
+git --no-pager status --short
+git --no-pager diff --stat
+```
+
 ## Commit Messages
 
 ### Format
