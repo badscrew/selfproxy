@@ -120,6 +120,7 @@
 
 
 
+
   - Create key parser for RSA, ECDSA, Ed25519 formats
   - Implement key format validation
   - Add support for passphrase-protected keys
@@ -147,7 +148,11 @@
 
 ## Phase 3: SSH Connection and SOCKS5 Proxy
 
-- [ ] 7. Implement Android SSH Client using JSch
+- [x] 7. Implement Android SSH Client using JSch
+
+
+
+
   - Create SSHClient interface in commonMain
   - Implement AndroidSSHClient in androidMain using JSch library
   - Implement SSH connection with private key authentication
@@ -156,11 +161,16 @@
   - Handle SSH session lifecycle
   - _Requirements: 1.1, 1.2, 7.1_
 
-- [ ]* 7.1 Write property test for SSH connection
+- [x] 7.1 Write property test for SSH connection
+
+
+
   - **Property 1: Valid credentials establish connections**
   - **Validates: Requirements 1.1**
 
-- [ ]* 7.2 Write property test for SOCKS5 proxy creation
+- [x] 7.2 Write property test for SOCKS5 proxy creation
+
+
   - **Property 2: Connected sessions create SOCKS5 proxies**
   - **Validates: Requirements 1.2**
 
