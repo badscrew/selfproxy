@@ -111,10 +111,14 @@
 
 
 
+
   - **Property 14: Credential storage round-trip with encryption**
   - **Validates: Requirements 3.4, 3.5, 9.1**
+-
 
-- [ ] 6. Implement SSH key parsing and validation
+- [x] 6. Implement SSH key parsing and validation
+
+
 
   - Create key parser for RSA, ECDSA, Ed25519 formats
   - Implement key format validation
@@ -122,16 +126,22 @@
   - Implement key type detection
   - _Requirements: 3.1, 3.2, 3.3_
 
-- [ ] 6.1 Write property test for key format support
+- [x] 6.1 Write property test for key format support
+
+
 
   - **Property 11: All key formats are supported**
   - **Validates: Requirements 3.1**
 
-- [ ]* 6.2 Write property test for key parsing
+- [x] 6.2 Write property test for key parsing
+
+
   - **Property 12: Key parsing validates format**
   - **Validates: Requirements 3.2**
 
-- [ ]* 6.3 Write property test for passphrase decryption
+- [x] 6.3 Write property test for passphrase decryption
+
+
   - **Property 13: Passphrase-protected keys decrypt correctly**
   - **Validates: Requirements 3.3**
 
