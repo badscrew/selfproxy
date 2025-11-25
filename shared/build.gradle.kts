@@ -78,6 +78,14 @@ kotlin {
                 implementation("junit:junit:4.13.2")
                 implementation("io.mockk:mockk:1.13.8")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+                
+                // Kotest for property-based testing
+                implementation("io.kotest:kotest-framework-engine:5.8.0")
+                implementation("io.kotest:kotest-assertions-core:5.8.0")
+                implementation("io.kotest:kotest-property:5.8.0")
+                
+                // Robolectric for Android unit testing
+                implementation("org.robolectric:robolectric:4.11.1")
             }
         }
     }
