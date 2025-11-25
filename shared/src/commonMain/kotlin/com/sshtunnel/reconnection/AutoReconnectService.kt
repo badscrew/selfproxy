@@ -2,6 +2,7 @@ package com.sshtunnel.reconnection
 
 import com.sshtunnel.data.ServerProfile
 import kotlinx.coroutines.flow.Flow
+import kotlin.time.Duration
 
 /**
  * Service that monitors SSH connection health and automatically reconnects when needed.
@@ -91,44 +92,4 @@ sealed class ReconnectStatus {
      * Reconnection cancelled (auto-reconnect disabled).
      */
     data object Cancelled : ReconnectStatus()
-}
-
-import kotlin.time.Duration
-
-/**
- * Information about a reconnection attempt.
- * 
- * @property attemptNumber The current attempt number (1-based)
- * @property nextRetryIn Duration until next retry attempt
- * @property reason The reason for the disconnection
- */
-data class ReconnectAttempt(
-    val attemptNumber: Int,
-    val nextRetryIn: Duration,
-    val reason: DisconnectReason
-)
-
-/**
- * Reason for disconnection that triggered reconnection.
- */
-sealed class DisconnectReason {
-    /**
-     * Connection was lost unexpectedly.
-     */
-    data object ConnectionLost : DisconnectReason()
-    
-    /**
-     * Network changed (WiFi <-> Mobile data).
-     */
-    data object NetworkChanged : DisconnectReason()
-    
-    /**
-     * Keep-alive packet failed.
-     */
-    data object KeepAliveFailed : DisconnectReason()
-    
-    /**
-     * Unknown reason.
-     */
-    data class Unknown(val message: String) : DisconnectReason()
 }

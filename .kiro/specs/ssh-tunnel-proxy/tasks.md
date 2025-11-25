@@ -393,6 +393,7 @@
 
 
 
+
   - Request battery optimization exemption
   - Implement configurable keep-alive intervals
   - Adjust keep-alive on battery saver mode
@@ -409,7 +410,11 @@
 
 ## Phase 7: Connection Testing and Diagnostics
 
-- [ ] 17. Implement shared Connection Test Service
+- [x] 17. Implement shared Connection Test Service
+
+
+
+
   - Create ConnectionTestService interface in commonMain
   - Implement using Ktor HttpClient in commonMain
   - Query external IP check service (ifconfig.me or ipify.org)
