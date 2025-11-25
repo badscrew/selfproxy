@@ -485,6 +485,7 @@
 
 
 
+
   - Create app selection screen
   - List all installed apps with checkboxes
   - Implement app search/filter
@@ -492,7 +493,11 @@
   - Apply routing changes dynamically
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 22. Implement Settings UI
+- [x] 22. Implement Settings UI
+
+
+
+
   - Create settings screen with all configuration options
   - Add SSH connection settings section
   - Add VPN settings section (DNS mode)
