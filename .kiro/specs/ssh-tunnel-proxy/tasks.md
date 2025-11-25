@@ -55,18 +55,25 @@
 
 
 
+
   - **Property 7: Profile listing completeness**
   - **Validates: Requirements 2.2**
 
-- [ ]* 3.2 Write property test for profile selection
+- [x]* 3.2 Write property test for profile selection
+
+
   - **Property 8: Profile selection loads correct details**
   - **Validates: Requirements 2.3**
 
-- [ ]* 3.3 Write property test for profile deletion
+- [x]* 3.3 Write property test for profile deletion
+
+
   - **Property 9: Profile deletion removes data**
   - **Validates: Requirements 2.4**
 
-- [ ]* 3.4 Write property test for profile updates
+- [x]* 3.4 Write property test for profile updates
+
+
   - **Property 10: Profile updates persist changes**
   - **Validates: Requirements 2.5**
 
