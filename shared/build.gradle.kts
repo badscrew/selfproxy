@@ -33,6 +33,9 @@ kotlin {
                 // Kotlinx Serialization
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
                 
+                // Kotlinx DateTime
+                implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.5.0")
+                
                 // SQLDelight
                 implementation("app.cash.sqldelight:runtime:2.0.1")
                 implementation("app.cash.sqldelight:coroutines-extensions:2.0.1")

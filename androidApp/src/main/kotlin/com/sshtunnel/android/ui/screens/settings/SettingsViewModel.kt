@@ -134,6 +134,15 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
+     * Update verbose logging.
+     */
+    fun updateVerboseLogging(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateVerboseLogging(enabled)
+        }
+    }
+    
+    /**
      * Reset all settings to defaults.
      */
     fun resetToDefaults() {

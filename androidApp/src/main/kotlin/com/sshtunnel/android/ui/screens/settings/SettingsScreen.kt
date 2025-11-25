@@ -1,5 +1,6 @@
 package com.sshtunnel.android.ui.screens.settings
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -8,15 +9,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.sshtunnel.android.logging.LogExportService
 import com.sshtunnel.data.DnsMode
+import com.sshtunnel.logging.Logger
+import kotlinx.coroutines.launch
 
 /**
  * Settings screen - displays app configuration options.
@@ -139,6 +145,11 @@ fun SettingsScreen(
             
             // Battery Optimization Section
             BatteryOptimizationSection(viewModel = viewModel)
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Diagnostics Section
+            DiagnosticsSection(viewModel = viewModel)
         }
     }
 }
@@ -584,5 +595,176 @@ private fun BatteryOptimizationSection(viewModel: SettingsViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DiagnosticsSection(viewModel: SettingsViewModel) {
+    val settings by viewModel.settings.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showExportDialog by remember { mutableStateOf(false) }
+    var exportError by remember { mutableStateOf<String?>(null) }
+    
+    SettingsSection(title = "Diagnostics") {
+        // Verbose Logging Toggle
+        SwitchSettingItem(
+            label = "Verbose Logging",
+            checked = settings.verboseLogging,
+            onCheckedChange = { viewModel.updateVerboseLogging(it) },
+            description = "Enable detailed logging for debugging purposes"
+        )
+        
+        Divider(modifier = Modifier.padding(vertical = 16.dp))
+        
+        // Log Export
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Export Logs",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = "Export diagnostic logs for troubleshooting. All sensitive data is automatically removed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showExportDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Export",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Export Logs")
+                }
+            }
+            
+            if (exportError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Error: $exportError",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+        
+        Divider(modifier = Modifier.padding(vertical = 16.dp))
+        
+        // Info Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Info",
+                    tint = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Privacy Notice",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        text = "Logs are sanitized to remove passwords, private keys, and other sensitive data before export.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        }
+    }
+    
+    // Export Dialog
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = { Text("Export Logs") },
+            text = { Text("Choose export format:") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExportDialog = false
+                        scope.launch {
+                            try {
+                                // Export as text
+                                val logExportService = LogExportService(
+                                    context,
+                                    (context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp)
+                                        .getLogger()
+                                )
+                                val result = logExportService.exportLogsAsText()
+                                result.onSuccess { intent ->
+                                    context.startActivity(Intent.createChooser(intent, "Share Logs"))
+                                }.onFailure { error ->
+                                    exportError = error.message
+                                }
+                            } catch (e: Exception) {
+                                exportError = e.message
+                            }
+                        }
+                    }
+                ) {
+                    Text("Text File")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+                            scope.launch {
+                                try {
+                                    // Export as JSON
+                                    val logExportService = LogExportService(
+                                        context,
+                                        (context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp)
+                                            .getLogger()
+                                    )
+                                    val result = logExportService.exportLogsAsJson()
+                                    result.onSuccess { intent ->
+                                        context.startActivity(Intent.createChooser(intent, "Share Logs"))
+                                    }.onFailure { error ->
+                                        exportError = error.message
+                                    }
+                                } catch (e: Exception) {
+                                    exportError = e.message
+                                }
+                            }
+                        }
+                    ) {
+                        Text("JSON File")
+                    }
+                    TextButton(onClick = { showExportDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
     }
 }

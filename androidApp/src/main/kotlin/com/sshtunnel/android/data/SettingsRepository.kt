@@ -30,6 +30,7 @@ class SettingsRepository @Inject constructor(
         private val CUSTOM_SOCKS_PORT = intPreferencesKey("custom_socks_port")
         private val STRICT_HOST_KEY_CHECKING = booleanPreferencesKey("strict_host_key_checking")
         private val DNS_MODE = stringPreferencesKey("dns_mode")
+        private val VERBOSE_LOGGING = booleanPreferencesKey("verbose_logging")
     }
     
     /**
@@ -49,7 +50,8 @@ class SettingsRepository @Inject constructor(
                 } catch (e: IllegalArgumentException) {
                     DnsMode.THROUGH_TUNNEL
                 }
-            } ?: DnsMode.THROUGH_TUNNEL
+            } ?: DnsMode.THROUGH_TUNNEL,
+            verboseLogging = preferences[VERBOSE_LOGGING] ?: false
         )
     }
     
@@ -117,6 +119,15 @@ class SettingsRepository @Inject constructor(
     suspend fun updateDnsMode(mode: DnsMode) {
         context.dataStore.edit { preferences ->
             preferences[DNS_MODE] = mode.name
+        }
+    }
+    
+    /**
+     * Update verbose logging.
+     */
+    suspend fun updateVerboseLogging(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[VERBOSE_LOGGING] = enabled
         }
     }
     

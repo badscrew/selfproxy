@@ -415,6 +415,7 @@
 
 
 
+
   - Create ConnectionTestService interface in commonMain
   - Implement using Ktor HttpClient in commonMain
   - Query external IP check service (ifconfig.me or ipify.org)
@@ -430,7 +431,11 @@
   - **Property 32: Connection test validates routing**
   - **Validates: Requirements 12.3**
 
-- [ ] 18. Implement diagnostic logging
+- [x] 18. Implement diagnostic logging
+
+
+
+
   - Add verbose logging toggle
   - Implement log sanitization (remove sensitive data)
   - Add log export functionality

@@ -13,6 +13,7 @@ import kotlin.time.Duration.Companion.seconds
  * @property customSocksPort Custom local port for SOCKS5 proxy (null for automatic)
  * @property strictHostKeyChecking Whether to verify SSH server host keys
  * @property dnsMode How DNS queries should be handled
+ * @property verboseLogging Whether to enable verbose logging for debugging
  */
 data class ConnectionSettings(
     val sshPort: Int = 22,
@@ -21,7 +22,8 @@ data class ConnectionSettings(
     val enableCompression: Boolean = false,
     val customSocksPort: Int? = null,
     val strictHostKeyChecking: Boolean = false,
-    val dnsMode: DnsMode = DnsMode.THROUGH_TUNNEL
+    val dnsMode: DnsMode = DnsMode.THROUGH_TUNNEL,
+    val verboseLogging: Boolean = false
 )
 
 /**
