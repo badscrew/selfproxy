@@ -303,6 +303,7 @@
 
 
 
+
   - Create AutoReconnectService interface in commonMain
   - Implement reconnection logic using shared state machine
   - Detect SSH connection drops via keep-alive failures
@@ -332,7 +333,11 @@
 
 ## Phase 6: Configuration and Settings
 
-- [ ] 15. Implement connection settings
+- [x] 15. Implement connection settings
+
+
+
+
   - Create settings UI screen
   - Add SSH port configuration
   - Add connection timeout configuration
