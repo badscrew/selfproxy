@@ -9,4 +9,7 @@ sealed class Screen(val route: String) {
         fun createRoute(profileId: Long) = "connection/$profileId"
     }
     object Settings : Screen("settings")
+    object AppRouting : Screen("app-routing/{profileId}") {
+        fun createRoute(profileId: Long) = "app-routing/$profileId"
+    }
 }

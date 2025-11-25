@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.sshtunnel.android.ui.screens.approuting.AppRoutingScreen
 import com.sshtunnel.android.ui.screens.connection.ConnectionScreen
 import com.sshtunnel.android.ui.screens.profiles.ProfilesScreen
 import com.sshtunnel.android.ui.screens.settings.SettingsScreen
@@ -48,12 +49,33 @@ fun NavGraph(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
+                onNavigateToAppRouting = { id ->
+                    navController.navigate(Screen.AppRouting.createRoute(id))
+                },
                 profileId = profileId
             )
         }
         
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.AppRouting.route,
+            arguments = listOf(
+                navArgument("profileId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getLong("profileId") ?: -1L
+            AppRoutingScreen(
+                profileId = profileId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

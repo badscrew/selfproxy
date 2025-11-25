@@ -31,6 +31,7 @@ import kotlin.time.Duration
 @Composable
 fun ConnectionScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToAppRouting: ((Long) -> Unit)? = null,
     profileId: Long? = null,
     viewModel: ConnectionViewModel = hiltViewModel()
 ) {
@@ -85,7 +86,8 @@ fun ConnectionScreen(
                         testResult = testResult,
                         onDisconnect = { viewModel.disconnect() },
                         onTestConnection = { viewModel.testConnection() },
-                        onClearTestResult = { viewModel.clearTestResult() }
+                        onClearTestResult = { viewModel.clearTestResult() },
+                        onNavigateToAppRouting = onNavigateToAppRouting
                     )
                 }
                 
@@ -201,7 +203,8 @@ private fun ConnectedContent(
     testResult: TestResultState,
     onDisconnect: () -> Unit,
     onTestConnection: () -> Unit,
-    onClearTestResult: () -> Unit
+    onClearTestResult: () -> Unit,
+    onNavigateToAppRouting: ((Long) -> Unit)?
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -236,6 +239,19 @@ private fun ConnectedContent(
         )
         
         Spacer(modifier = Modifier.height(8.dp))
+        
+        // App routing button
+        profile?.let { prof ->
+            onNavigateToAppRouting?.let { navigate ->
+                OutlinedButton(
+                    onClick = { navigate(prof.id) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Configure App Routing")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
         
         // Connection test section
         ConnectionTestSection(
@@ -437,7 +453,7 @@ private fun ProxyInfoCard(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            HorizontalDivider()
+            Divider()
             
             Spacer(modifier = Modifier.height(12.dp))
             
@@ -610,7 +626,7 @@ private fun ConnectionTestResultCard(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            HorizontalDivider()
+            Divider()
             
             Spacer(modifier = Modifier.height(12.dp))
             

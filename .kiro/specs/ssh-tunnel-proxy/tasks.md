@@ -470,6 +470,7 @@
 - [x] 20. Implement Connection UI
 
 
+
   - Create main connection screen
   - Display connection status (disconnected, connecting, connected, error)
   - Add connect/disconnect button
@@ -479,7 +480,11 @@
   - Show test results (external IP, routing status)
   - _Requirements: 1.1, 1.4, 1.5, 12.1, 12.2, 12.3_
 
-- [ ] 21. Implement App Routing UI
+- [x] 21. Implement App Routing UI
+
+
+
+
   - Create app selection screen
   - List all installed apps with checkboxes
   - Implement app search/filter
