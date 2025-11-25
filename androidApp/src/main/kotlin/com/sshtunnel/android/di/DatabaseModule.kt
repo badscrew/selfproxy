@@ -1,0 +1,42 @@
+package com.sshtunnel.android.di
+
+import android.content.Context
+import com.sshtunnel.db.DatabaseDriverFactory
+import com.sshtunnel.db.SSHTunnelDatabase
+import com.sshtunnel.repository.ProfileRepository
+import com.sshtunnel.repository.ProfileRepositoryImpl
+import com.sshtunnel.storage.CredentialStore
+import com.sshtunnel.storage.AndroidCredentialStore
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * Hilt module for providing database and repository dependencies.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    
+    @Provides
+    @Singleton
+    fun provideDatabase(@ApplicationContext context: Context): SSHTunnelDatabase {
+        val driverFactory = DatabaseDriverFactory(context)
+        return SSHTunnelDatabase(driverFactory.createDriver())
+    }
+    
+    @Provides
+    @Singleton
+    fun provideProfileRepository(database: SSHTunnelDatabase): ProfileRepository {
+        return ProfileRepositoryImpl(database)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideCredentialStore(@ApplicationContext context: Context): CredentialStore {
+        return AndroidCredentialStore(context)
+    }
+}
