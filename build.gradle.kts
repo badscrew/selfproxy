@@ -12,6 +12,9 @@ plugins {
     
     // SQLDelight
     id("app.cash.sqldelight") version "2.0.1" apply false
+    
+    // Hilt
+    id("com.google.dagger.hilt.android") version "2.50" apply false
 }
 
 tasks.register("clean", Delete::class) {
