@@ -290,13 +290,19 @@
 
 
 
+
   - Create NetworkMonitor interface in commonMain
   - Implement AndroidNetworkMonitor using ConnectivityManager
   - Observe network changes (WiFi, mobile data, lost, available)
   - Emit network state changes as Flow
   - _Requirements: 4.4_
 
-- [ ] 14. Implement Auto-Reconnect Service
+- [x] 14. Implement Auto-Reconnect Service
+
+
+
+
+
   - Create AutoReconnectService interface in commonMain
   - Implement reconnection logic using shared state machine
   - Detect SSH connection drops via keep-alive failures
@@ -304,22 +310,22 @@
   - Use WorkManager for background reconnection attempts
   - _Requirements: 4.1, 4.2, 4.4, 4.5_
 
-- [ ] 14.1 Write property test for disconnection detection
+- [ ]* 14.1 Write property test for disconnection detection
 
   - **Property 15: Disconnection detection**
   - **Validates: Requirements 4.1**
 
-- [ ] 14.2 Write property test for reconnection attempts
+- [ ]* 14.2 Write property test for reconnection attempts
 
   - **Property 16: Reconnection attempts after disconnection**
   - **Validates: Requirements 4.2**
 
-- [ ] 14.3 Write property test for network change reconnection
+- [ ]* 14.3 Write property test for network change reconnection
 
   - **Property 18: Network change triggers reconnection**
   - **Validates: Requirements 4.4**
 
-- [ ] 14.4 Write property test for reconnection restoration
+- [ ]* 14.4 Write property test for reconnection restoration
 
   - **Property 19: Successful reconnection restores proxy**
   - **Validates: Requirements 4.5**
