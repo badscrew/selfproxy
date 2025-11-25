@@ -6,6 +6,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -131,6 +134,11 @@ fun SettingsScreen(
                     description = "How DNS queries are handled"
                 )
             }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Battery Optimization Section
+            BatteryOptimizationSection(viewModel = viewModel)
         }
     }
 }
@@ -369,5 +377,212 @@ private fun formatDnsMode(mode: DnsMode): String {
         DnsMode.THROUGH_TUNNEL -> "Through Tunnel"
         DnsMode.CUSTOM_DNS -> "Custom DNS"
         DnsMode.SYSTEM_DEFAULT -> "System Default"
+    }
+}
+
+
+@Composable
+private fun BatteryOptimizationSection(viewModel: SettingsViewModel) {
+    val batteryState by viewModel.batteryState.collectAsState()
+    val isIgnoringOptimizations by viewModel.isIgnoringBatteryOptimizations.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    SettingsSection(title = "Battery Optimization") {
+        // Battery Status
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Battery Status",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Level:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (batteryState.level >= 0) "${batteryState.level}%" else "Unknown",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        batteryState.isLowBattery -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Charging:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (batteryState.isCharging) "Yes" else "No",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Battery Saver:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (batteryState.isBatterySaverEnabled) "Enabled" else "Disabled",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (batteryState.isBatterySaverEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            }
+        }
+        
+        Divider(modifier = Modifier.padding(vertical = 16.dp))
+        
+        // Battery Optimization Exemption
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "Battery Optimization Exemption",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = if (isIgnoringOptimizations) {
+                    "App is exempt from battery optimizations. The VPN tunnel will remain active in the background."
+                } else {
+                    "App is subject to battery optimizations. The VPN tunnel may be interrupted when the device enters doze mode."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            if (!isIgnoringOptimizations) {
+                Button(
+                    onClick = {
+                        viewModel.getBatteryOptimizationExemptionIntent()?.let { intent ->
+                            context.startActivity(intent)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Request Exemption")
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Check,
+                        contentDescription = "Exempt",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Exemption granted",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+        
+        Divider(modifier = Modifier.padding(vertical = 16.dp))
+        
+        // Low Battery Warning
+        if (batteryState.isLowBattery) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Warning,
+                        contentDescription = "Warning",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Low Battery",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Battery level is low. Consider disconnecting the tunnel to conserve power.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+        }
+        
+        // Battery Saver Info
+        if (batteryState.isBatterySaverEnabled) {
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Info,
+                        contentDescription = "Info",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Battery Saver Active",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Keep-alive intervals have been increased to reduce battery consumption.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+        }
     }
 }

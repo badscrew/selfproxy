@@ -26,9 +26,12 @@ class AutoReconnectServiceImpl(
     private val connectionManager: SSHConnectionManager,
     private val networkMonitor: NetworkMonitor,
     private val reconnectionStateMachine: ReconnectionStateMachine,
-    private val keepAliveInterval: Duration = 60.seconds,
     private val scope: CoroutineScope
 ) : AutoReconnectService {
+    
+    private var keepAliveInterval: Duration = 60.seconds
+    private var batterySaverKeepAliveInterval: Duration = 120.seconds
+    private var isBatterySaverMode = false
     
     private val _reconnectAttempts = MutableSharedFlow<ReconnectAttemptWithStatus>()
     override fun observeReconnectAttempts(): Flow<ReconnectAttemptWithStatus> = _reconnectAttempts.asSharedFlow()
@@ -88,6 +91,24 @@ class AutoReconnectServiceImpl(
     
     override fun isEnabled(): Boolean = enabled
     
+    override fun setKeepAliveInterval(interval: Duration) {
+        this.keepAliveInterval = interval
+        
+        // Restart keep-alive with new interval if active
+        if (enabled && keepAliveJob != null) {
+            startKeepAlive()
+        }
+    }
+    
+    override fun setBatterySaverMode(enabled: Boolean) {
+        this.isBatterySaverMode = enabled
+        
+        // Restart keep-alive with adjusted interval if active
+        if (this.enabled && keepAliveJob != null) {
+            startKeepAlive()
+        }
+    }
+    
     /**
      * Handles connection state changes.
      */
@@ -137,6 +158,7 @@ class AutoReconnectServiceImpl(
     
     /**
      * Starts keep-alive monitoring.
+     * Uses battery-saver interval if battery saver mode is enabled.
      */
     private fun startKeepAlive() {
         // Cancel any existing keep-alive job
@@ -144,7 +166,14 @@ class AutoReconnectServiceImpl(
         
         keepAliveJob = scope.launch {
             while (isActive && enabled) {
-                delay(keepAliveInterval)
+                // Use battery-saver interval if in battery saver mode
+                val interval = if (isBatterySaverMode) {
+                    batterySaverKeepAliveInterval
+                } else {
+                    keepAliveInterval
+                }
+                
+                delay(interval)
                 
                 // Check if connection is still alive
                 val currentState = connectionManager.observeConnectionState().value

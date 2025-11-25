@@ -39,6 +39,21 @@ interface AutoReconnectService {
      * @return true if auto-reconnect is enabled, false otherwise
      */
     fun isEnabled(): Boolean
+    
+    /**
+     * Sets the keep-alive interval for maintaining idle connections.
+     * 
+     * @param interval Duration between keep-alive packets
+     */
+    fun setKeepAliveInterval(interval: Duration)
+    
+    /**
+     * Enables or disables battery saver mode.
+     * When enabled, keep-alive intervals are increased to reduce battery consumption.
+     * 
+     * @param enabled Whether battery saver mode is enabled
+     */
+    fun setBatterySaverMode(enabled: Boolean)
 }
 
 /**
@@ -76,4 +91,44 @@ sealed class ReconnectStatus {
      * Reconnection cancelled (auto-reconnect disabled).
      */
     data object Cancelled : ReconnectStatus()
+}
+
+import kotlin.time.Duration
+
+/**
+ * Information about a reconnection attempt.
+ * 
+ * @property attemptNumber The current attempt number (1-based)
+ * @property nextRetryIn Duration until next retry attempt
+ * @property reason The reason for the disconnection
+ */
+data class ReconnectAttempt(
+    val attemptNumber: Int,
+    val nextRetryIn: Duration,
+    val reason: DisconnectReason
+)
+
+/**
+ * Reason for disconnection that triggered reconnection.
+ */
+sealed class DisconnectReason {
+    /**
+     * Connection was lost unexpectedly.
+     */
+    data object ConnectionLost : DisconnectReason()
+    
+    /**
+     * Network changed (WiFi <-> Mobile data).
+     */
+    data object NetworkChanged : DisconnectReason()
+    
+    /**
+     * Keep-alive packet failed.
+     */
+    data object KeepAliveFailed : DisconnectReason()
+    
+    /**
+     * Unknown reason.
+     */
+    data class Unknown(val message: String) : DisconnectReason()
 }
