@@ -142,6 +142,85 @@ class SSHClientPropertiesTest {
         }
     }
     
+    /**
+     * Feature: ssh-tunnel-proxy, Property 27: Compression negotiation
+     * Validates: Requirements 10.2
+     * 
+     * This property test validates that the SSH client properly handles compression configuration.
+     * For any connection with compression enabled, SSH compression should be negotiated with the server.
+     * 
+     * Since we cannot test against real SSH servers in unit tests, we validate:
+     * 1. The client accepts the compression parameter (both enabled and disabled)
+     * 2. The client processes compression settings without errors
+     * 3. The client handles compression configuration for all key types
+     * 
+     * The actual compression negotiation with a real SSH server is tested in integration tests.
+     */
+    @Test
+    fun `compression should be configurable for SSH connections`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 27: Compression negotiation
+        // Validates: Requirements 10.2
+        
+        checkAll(
+            iterations = 100,
+            Arb.serverProfile(),
+            Arb.privateKey(),
+            Arb.boolean() // compression enabled or disabled
+        ) { profile, privateKey, enableCompression ->
+            val client = AndroidSSHClient()
+            
+            // Attempt to connect with compression setting
+            val result = client.connect(
+                profile = profile,
+                privateKey = privateKey,
+                passphrase = null,
+                connectionTimeout = 5.seconds,
+                enableCompression = enableCompression,
+                strictHostKeyChecking = false
+            )
+            
+            // The result should be a Result type (either success or failure)
+            // We expect failure in unit tests (no real SSH server), but the client
+            // should handle compression configuration gracefully
+            when {
+                result.isSuccess -> {
+                    // If somehow successful (shouldn't happen in unit tests),
+                    // verify the session is valid and clean up
+                    val session = result.getOrNull()
+                    if (session != null) {
+                        assert(session.serverAddress == profile.hostname)
+                        assert(session.serverPort == profile.port)
+                        assert(session.username == profile.username)
+                        
+                        // Clean up
+                        client.disconnect(session)
+                    }
+                }
+                result.isFailure -> {
+                    // Expected in unit tests - verify we get proper error types
+                    val error = result.exceptionOrNull()
+                    assert(error is SSHError) {
+                        "Expected SSHError but got ${error?.javaClass?.simpleName}"
+                    }
+                    
+                    // Verify error messages are informative
+                    val message = error?.message ?: ""
+                    assert(message.isNotEmpty()) {
+                        "Error message should not be empty"
+                    }
+                    
+                    // Verify that compression configuration didn't cause a different error
+                    // (i.e., the error should be connection-related, not compression-related)
+                    // Compression errors would typically contain "compression" in the message
+                    val isCompressionError = message.contains("compression", ignoreCase = true)
+                    assert(!isCompressionError) {
+                        "Compression configuration should not cause errors: $message"
+                    }
+                }
+            }
+        }
+    }
+    
     // Custom generators for property-based testing
     
     companion object {

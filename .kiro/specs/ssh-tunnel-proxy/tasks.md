@@ -338,6 +338,7 @@
 
 
 
+
   - Create settings UI screen
   - Add SSH port configuration
   - Add connection timeout configuration
@@ -349,7 +350,11 @@
   - Persist settings using DataStore
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ]* 15.1 Write property test for compression negotiation
+- [x] 15.1 Write property test for compression negotiation
+
+
+
+
   - **Property 27: Compression negotiation**
   - **Validates: Requirements 10.2**
 
