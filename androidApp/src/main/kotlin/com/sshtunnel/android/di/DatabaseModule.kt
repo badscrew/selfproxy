@@ -11,8 +11,13 @@ import com.sshtunnel.ssh.SSHConnectionManager
 import com.sshtunnel.ssh.SSHConnectionManagerImpl
 import com.sshtunnel.storage.AndroidCredentialStore
 import com.sshtunnel.storage.CredentialStore
+import com.sshtunnel.repository.AppRoutingRepository
+import com.sshtunnel.repository.AppRoutingRepositoryImpl
+import com.sshtunnel.vpn.AndroidVpnTunnelProvider
+import com.sshtunnel.vpn.VpnTunnelProvider
 import com.sshtunnel.testing.ConnectionTestService
 import com.sshtunnel.testing.ConnectionTestServiceImpl
+import io.ktor.client.HttpClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -66,19 +71,29 @@ object DatabaseModule {
     
     @Provides
     @Singleton
-    fun provideHttpClient(): io.ktor.client.HttpClient {
-        return io.ktor.client.HttpClient()
+    fun provideAppRoutingRepository(database: SSHTunnelDatabase): AppRoutingRepository {
+        return AppRoutingRepositoryImpl(database)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideVpnTunnelProvider(@ApplicationContext context: Context): AndroidVpnTunnelProvider {
+        return AndroidVpnTunnelProvider(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideHttpClient(): HttpClient {
+        return HttpClient()
     }
     
     @Provides
     @Singleton
     fun provideConnectionTestService(
-        httpClient: io.ktor.client.HttpClient,
+        httpClient: HttpClient,
         connectionManager: SSHConnectionManager
     ): ConnectionTestService {
-        return ConnectionTestServiceImpl(
-            httpClient = httpClient,
-            connectionManager = connectionManager
-        )
+        return ConnectionTestServiceImpl(httpClient, connectionManager)
     }
+    
 }

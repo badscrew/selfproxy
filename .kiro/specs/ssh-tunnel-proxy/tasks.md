@@ -548,7 +548,11 @@
   - Test end-to-end connection flow
   - _Requirements: All_
 
-- [ ] 26. Manual testing and bug fixes
+- [x] 26. Manual testing and bug fixes
+
+
+
+
   - Test on multiple Android versions
   - Test network switching (WiFi ↔ mobile data)
   - Test battery optimization behavior

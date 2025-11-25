@@ -716,7 +716,7 @@ private fun DiagnosticsSection(viewModel: SettingsViewModel) {
                                 val logExportService = LogExportService(
                                     context,
                                     (context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp)
-                                        .getLogger()
+                                        .logger
                                 )
                                 val result = logExportService.exportLogsAsText()
                                 result.onSuccess { intent ->
@@ -744,7 +744,7 @@ private fun DiagnosticsSection(viewModel: SettingsViewModel) {
                                     val logExportService = LogExportService(
                                         context,
                                         (context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp)
-                                            .getLogger()
+                                            .logger
                                     )
                                     val result = logExportService.exportLogsAsJson()
                                     result.onSuccess { intent ->

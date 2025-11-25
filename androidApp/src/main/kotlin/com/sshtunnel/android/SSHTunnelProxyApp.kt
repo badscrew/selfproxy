@@ -10,6 +10,4 @@ class SSHTunnelProxyApp : Application() {
     
     @Inject
     lateinit var logger: Logger
-    
-    fun getLogger(): Logger = logger
 }
