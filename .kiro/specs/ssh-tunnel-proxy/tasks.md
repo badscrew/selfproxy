@@ -33,6 +33,7 @@
 
 
 
+
   - **Property 6: Profile creation round-trip**
   - **Validates: Requirements 2.1**
 
