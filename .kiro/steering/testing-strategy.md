@@ -4,6 +4,123 @@ inclusion: always
 
 # Testing Strategy for SSH Tunnel Proxy
 
+## Running Tests in This Project
+
+### Important: Kotest Property Tests in Kotlin Multiplatform
+
+This project uses **Kotest** for property-based testing in a Kotlin Multiplatform setup. Here are critical lessons learned:
+
+#### Test Structure for Multiplatform
+
+**❌ DON'T use Kotest's StringSpec or other spec styles directly:**
+```kotlin
+// This WON'T work in Android unit tests
+class MyTest : StringSpec({
+    "test name" {
+        checkAll(100, Arb.something()) { value ->
+            // test logic
+        }
+    }
+})
+```
+
+**✅ DO use standard Kotlin Test with @Test annotations:**
+```kotlin
+// This WORKS correctly
+class MyTest {
+    @Test
+    fun `test name`() = runTest {
+        checkAll(100, Arb.something()) { value ->
+            // test logic
+        }
+    }
+}
+```
+
+**Reason**: Android unit tests use JUnit as the test runner by default. Kotest's spec styles (StringSpec, FunSpec, etc.) require the Kotest test runner, which isn't configured for Android unit tests. However, Kotest's property testing functions (`checkAll`, `Arb`, etc.) work perfectly with standard `@Test` annotations.
+
+#### Running Tests
+
+**Windows (PowerShell):**
+```powershell
+# Run all tests in shared module
+.\gradlew.bat shared:testDebugUnitTest
+
+# Clean and run tests
+.\gradlew.bat shared:cleanTestDebugUnitTest shared:testDebugUnitTest
+
+# Run specific test class
+.\gradlew.bat shared:testDebugUnitTest --tests "com.sshtunnel.data.ServerProfilePropertiesTest"
+```
+
+**Linux/Mac:**
+```bash
+# Run all tests in shared module
+./gradlew shared:testDebugUnitTest
+
+# Clean and run tests
+./gradlew shared:cleanTestDebugUnitTest shared:testDebugUnitTest
+
+# Run specific test class
+./gradlew shared:testDebugUnitTest --tests "com.sshtunnel.data.ServerProfilePropertiesTest"
+```
+
+#### Test Reports
+
+After running tests, view the HTML report:
+```
+shared/build/reports/tests/testDebugUnitTest/index.html
+```
+
+Test results XML files:
+```
+shared/build/test-results/testDebugUnitTest/
+```
+
+#### Property Test Configuration
+
+- **Iterations**: Set to 100 minimum (as per design document)
+- **Tagging**: Always include property reference in comments
+- **Generators**: Create custom `Arb` generators for domain types
+
+**Example:**
+```kotlin
+class ServerProfilePropertiesTest {
+    
+    @Test
+    fun `profile serialization round-trip should preserve data`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 6: Profile creation round-trip
+        // Validates: Requirements 2.1
+        checkAll(
+            iterations = 100,
+            Arb.serverProfile()
+        ) { profile ->
+            val json = Json.encodeToString(profile)
+            val deserialized = Json.decodeFromString<ServerProfile>(json)
+            deserialized shouldBe profile
+        }
+    }
+}
+```
+
+#### Common Issues and Solutions
+
+**Issue**: Tests don't run or show 0 tests executed
+- **Cause**: Using Kotest spec styles without Kotest runner
+- **Solution**: Use `@Test` annotations with `runTest` wrapper
+
+**Issue**: `runTest` not found
+- **Cause**: Missing kotlinx-coroutines-test dependency
+- **Solution**: Already included in commonTest dependencies
+
+**Issue**: Property test fails with serialization error
+- **Cause**: Missing `@Serializable` annotation on data classes
+- **Solution**: Add `@Serializable` to all data classes used in serialization tests
+
+**Issue**: Gradle command not recognized on Windows
+- **Cause**: Not using `.\` prefix for local scripts
+- **Solution**: Use `.\gradlew.bat` instead of `gradlew.bat`
+
 ## Testing Pyramid
 
 ```
@@ -93,11 +210,16 @@ class AndroidCredentialStoreTest {
 
 ## Property-Based Testing
 
-### Using Kotest Property Testing
+### Using Kotest Property Testing (Correct Approach)
+
+**IMPORTANT**: Use `@Test` annotations with `runTest`, NOT Kotest spec styles.
 
 ```kotlin
-class ConnectionPropertiesTest : StringSpec({
-    "valid credentials should establish connections" {
+class ConnectionPropertiesTest {
+    
+    @Test
+    fun `valid credentials should establish connections`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 1: Valid credentials establish connections
         checkAll(
             iterations = 100,
             Arb.serverProfile()
@@ -114,7 +236,9 @@ class ConnectionPropertiesTest : StringSpec({
         }
     }
     
-    "profile round-trip should preserve data" {
+    @Test
+    fun `profile round-trip should preserve data`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 6: Profile creation round-trip
         checkAll(
             iterations = 100,
             Arb.serverProfile()
@@ -132,7 +256,7 @@ class ConnectionPropertiesTest : StringSpec({
             retrieved?.hostname shouldBe profile.hostname
         }
     }
-})
+}
 ```
 
 ### Custom Generators
@@ -174,24 +298,29 @@ object Generators {
 
 ### Property Test Tagging
 
-Tag each property test with the design document reference:
+Tag each property test with the design document reference in a comment:
 
 ```kotlin
-class ConnectionPropertiesTest : StringSpec({
-    // Feature: ssh-tunnel-proxy, Property 1: Valid credentials establish connections
-    "valid credentials should establish connections" {
+class ConnectionPropertiesTest {
+    
+    @Test
+    fun `valid credentials should establish connections`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 1: Valid credentials establish connections
+        // Validates: Requirements 1.1
         checkAll(100, Arb.serverProfile()) { profile ->
             // Test implementation
         }
     }
     
-    // Feature: ssh-tunnel-proxy, Property 6: Profile creation round-trip
-    "profile round-trip should preserve data" {
+    @Test
+    fun `profile round-trip should preserve data`() = runTest {
+        // Feature: ssh-tunnel-proxy, Property 6: Profile creation round-trip
+        // Validates: Requirements 2.1
         checkAll(100, Arb.serverProfile()) { profile ->
             // Test implementation
         }
     }
-})
+}
 ```
 
 ## Integration Testing

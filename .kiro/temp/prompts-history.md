@@ -255,3 +255,71 @@ The three documents (requirements, design, tasks) are highly coherent and well-a
 
 **No critical issues found.** The spec is ready for implementation.
 
+## Session: 2025-11-25 - Implementation Phase
+
+### Task 2.1: Property Test for Profile Data Model
+
+**Prompt:** "Implement the task from the markdown document at .kiro/specs/ssh-tunnel-proxy/tasks.md: 2.1 Write property test for profile data model"
+- Started implementation of task 2.1
+- Created property-based test for ServerProfile data model
+- Implemented three property tests:
+  1. Profile serialization round-trip (validates JSON serialization preserves all fields)
+  2. Profile copy preservation (validates data class copy() works correctly)
+  3. Profile inequality (validates different profiles are not equal)
+- Created custom Kotest generators:
+  - `Arb.serverProfile()`: Generates random valid ServerProfile instances
+  - `Arb.profileName()`: Generates valid profile names (3-50 characters)
+  - `Arb.hostname()`: Generates valid hostnames (domains or IP addresses)
+  - `Arb.domain()`: Generates valid domain names
+  - `Arb.ipAddress()`: Generates valid IPv4 addresses
+  - `Arb.sshPort()`: Generates valid SSH port numbers
+  - `Arb.username()`: Generates valid usernames
+  - `Arb.timestamp()`: Generates valid timestamps
+- Added `@Serializable` annotations to ServerProfile and KeyType data classes
+- **Key Learning**: Kotest's StringSpec doesn't work with Android unit tests; must use `@Test` annotations with `runTest`
+- All tests passed: 3 tests, 100 iterations each, 1.430s total duration
+- Updated PBT status to "passed"
+- Created Git commit: `c5648d3` - "test(task-2.1): add property test for profile data model"
+
+**Files Created:**
+- `shared/src/commonTest/kotlin/com/sshtunnel/data/ServerProfilePropertiesTest.kt`
+
+**Files Modified:**
+- `shared/src/commonMain/kotlin/com/sshtunnel/data/ServerProfile.kt` (added @Serializable)
+- `.kiro/specs/ssh-tunnel-proxy/tasks.md` (marked task 2.1 as completed)
+
+**Prompt:** "update the steering documents with what you have learned so far about running tests in this project, to avoid erroneous behaviours"
+- Updated `.kiro/steering/testing-strategy.md` with project-specific test execution guidance
+- Added new section "Running Tests in This Project" at the beginning
+- Documented the critical issue: Kotest spec styles (StringSpec, FunSpec) don't work with Android unit tests
+- Provided correct approach: Use `@Test` annotations with `runTest` wrapper
+- Added Windows PowerShell and Linux/Mac command examples for running tests
+- Documented test report locations
+- Added common issues and solutions section
+- Updated property-based testing examples to use correct `@Test` approach
+- Attempted to create `.kiro/steering/kotest-property-testing.md` but file creation failed
+
+**Files Modified:**
+- `.kiro/steering/testing-strategy.md`
+
+**Prompt:** "you forgot that you need to be maintaining the prompt history"
+- Updating prompts-history.md with this session's activities
+
+## Key Decisions Made (This Session)
+
+1. **Test Structure**: Use `@Test` annotations with `runTest`, not Kotest spec styles
+2. **Property Test Approach**: Test data model serialization round-trip as foundation for repository tests
+3. **Generator Strategy**: Create comprehensive custom Arb generators for all domain types
+4. **Test Coverage**: 100 iterations per property test as specified in design document
+
+## Technical Learnings
+
+1. **Kotest in Multiplatform**: Kotest's spec styles require Kotest test runner, which isn't configured for Android unit tests. Use standard `@Test` annotations instead.
+2. **Windows Gradle**: Must use `.\gradlew.bat` prefix on Windows PowerShell
+3. **Test Reports**: HTML reports available at `shared/build/reports/tests/testDebugUnitTest/index.html`
+4. **Serialization**: Data classes need `@Serializable` annotation for kotlinx.serialization to work
+
+## Next Steps
+
+Continue with task 3: Implement shared Profile Repository
+
