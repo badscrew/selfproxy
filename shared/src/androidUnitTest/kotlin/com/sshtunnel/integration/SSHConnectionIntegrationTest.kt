@@ -1,7 +1,7 @@
 package com.sshtunnel.integration
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
+import org.robolectric.RuntimeEnvironment
 import com.sshtunnel.data.KeyType
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.ssh.AndroidSSHClient
@@ -61,7 +61,7 @@ class SSHConnectionIntegrationTest {
     
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
+        context = RuntimeEnvironment.getApplication()
         sshClient = AndroidSSHClient()
     }
     

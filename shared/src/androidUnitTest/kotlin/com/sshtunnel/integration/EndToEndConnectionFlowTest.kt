@@ -1,7 +1,7 @@
 package com.sshtunnel.integration
 
 import android.content.Context
-import androidx.test.core.app.ApplicationProvider
+import org.robolectric.RuntimeEnvironment
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.sshtunnel.data.KeyType
 import com.sshtunnel.data.ServerProfile
@@ -64,7 +64,7 @@ class EndToEndConnectionFlowTest {
     
     @Before
     fun setup() {
-        context = ApplicationProvider.getApplicationContext()
+        context = RuntimeEnvironment.getApplication()
         
         // Set up database
         driver = AndroidSqliteDriver(
@@ -108,7 +108,7 @@ class EndToEndConnectionFlowTest {
         assertTrue(profileId > 0, "Profile should be created with valid ID")
         
         // Step 2: Parse and store SSH key
-        val keyParseResult = keyParser.parsePrivateKey(TEST_PRIVATE_KEY_PEM.toByteArray())
+        val keyParseResult = keyParser.parseKey(TEST_PRIVATE_KEY_PEM.toByteArray(), null)
         assertTrue(keyParseResult.isSuccess, "Key parsing should succeed")
         
         val privateKey = keyParseResult.getOrThrow()
@@ -247,7 +247,7 @@ class EndToEndConnectionFlowTest {
             -----END OPENSSH PRIVATE KEY-----
         """.trimIndent()
         
-        val parseResult = keyParser.parsePrivateKey(ed25519Key.toByteArray())
+        val parseResult = keyParser.parseKey(ed25519Key.toByteArray(), null)
         
         // Note: This will fail with invalid key, but we're testing the parser structure
         // In a real test with valid keys, this would succeed
