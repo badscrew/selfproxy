@@ -153,6 +153,7 @@
 
 
 
+
   - Create SSHClient interface in commonMain
   - Implement AndroidSSHClient in androidMain using JSch library
   - Implement SSH connection with private key authentication
@@ -174,7 +175,11 @@
   - **Property 2: Connected sessions create SOCKS5 proxies**
   - **Validates: Requirements 1.2**
 
-- [ ] 8. Implement shared SSH Connection Manager
+- [x] 8. Implement shared SSH Connection Manager
+
+
+
+
   - Create SSHConnectionManager interface in commonMain
   - Implement connection state management with Flow
   - Implement connect, disconnect methods
@@ -182,11 +187,16 @@
   - Implement error handling and specific error messages
   - _Requirements: 1.1, 1.4, 1.5, 8.1, 8.2, 8.4_
 
-- [ ]* 8.1 Write property test for disconnection cleanup
+- [x] 8.1 Write property test for disconnection cleanup
+
+
+
   - **Property 4: Disconnection cleans up resources**
   - **Validates: Requirements 1.4**
 
-- [ ]* 8.2 Write property test for error messages
+- [x] 8.2 Write property test for error messages
+
+
   - **Property 5: Connection failures produce specific error messages**
   - **Validates: Requirements 1.5, 8.1, 8.2, 8.4**
 
