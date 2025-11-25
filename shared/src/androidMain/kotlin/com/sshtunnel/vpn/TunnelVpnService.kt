@@ -142,12 +142,46 @@ class TunnelVpnService : VpnService() {
     }
     
     private fun updateRouting(config: RoutingConfig) {
-        // For now, routing updates require recreating the TUN interface
-        // This is a limitation of Android's VpnService API
-        currentConfig?.let { currentCfg ->
-            val newConfig = currentCfg.copy(routingConfig = config)
-            stopTunnel()
-            startTunnel(newConfig)
+        serviceScope?.launch {
+            try {
+                Log.d(TAG, "Updating routing configuration")
+                
+                currentConfig?.let { currentCfg ->
+                    // Store the new config
+                    val newConfig = currentCfg.copy(routingConfig = config)
+                    currentConfig = newConfig
+                    
+                    // Recreate TUN interface with new routing
+                    // This is necessary because Android's VpnService doesn't support
+                    // dynamic routing updates without recreating the interface
+                    val oldTun = tunInterface
+                    
+                    // Create new TUN interface with updated routing
+                    val newTun = createTunInterface(newConfig)
+                    
+                    if (newTun != null) {
+                        // Cancel old packet routing
+                        packetRoutingJob?.cancel()
+                        
+                        // Close old TUN interface
+                        oldTun?.close()
+                        
+                        // Update to new TUN interface
+                        tunInterface = newTun
+                        
+                        // Restart packet routing
+                        startPacketRouting(newConfig.socksPort)
+                        
+                        Log.d(TAG, "Routing configuration updated successfully")
+                    } else {
+                        Log.e(TAG, "Failed to create new TUN interface with updated routing")
+                        updateProviderState(TunnelState.Error("Failed to update routing"))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating routing", e)
+                updateProviderState(TunnelState.Error("Failed to update routing: ${e.message}", e))
+            }
         }
     }
     
@@ -189,24 +223,69 @@ class TunnelVpnService : VpnService() {
                         builder.addDisallowedApplication(packageName)
                         Log.d(TAG, "Excluded app from tunnel: $packageName")
                     } catch (e: PackageManager.NameNotFoundException) {
-                        Log.w(TAG, "App not found: $packageName")
+                        Log.w(TAG, "App not found: $packageName", e)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to exclude app: $packageName", e)
                     }
+                }
+                
+                // Always exclude our own app to prevent routing loops
+                try {
+                    builder.addDisallowedApplication(packageName)
+                    Log.d(TAG, "Excluded own app from tunnel: $packageName")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to exclude own app", e)
                 }
             }
             
             RoutingMode.ROUTE_ONLY_INCLUDED -> {
-                // This mode is more complex and requires excluding all apps except the included ones
-                // For now, we'll implement the basic exclude mode
-                Log.w(TAG, "ROUTE_ONLY_INCLUDED mode not fully implemented yet")
+                // In this mode, we need to exclude all apps except the ones in the "included" list
+                // The "excludedApps" set in this mode actually contains the apps to INCLUDE
+                // We need to get all installed apps and exclude everything except the included ones
+                
+                try {
+                    val pm = packageManager
+                    val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                    
+                    val includedApps = config.excludedApps // In ROUTE_ONLY_INCLUDED mode, this is the include list
+                    
+                    installedApps.forEach { appInfo ->
+                        val pkgName = appInfo.packageName
+                        
+                        // Skip if this app is in the included list
+                        if (includedApps.contains(pkgName)) {
+                            Log.d(TAG, "Including app in tunnel: $pkgName")
+                            return@forEach
+                        }
+                        
+                        // Skip our own app (always exclude to prevent loops)
+                        if (pkgName == packageName) {
+                            return@forEach
+                        }
+                        
+                        // Exclude all other apps
+                        try {
+                            builder.addDisallowedApplication(pkgName)
+                            Log.v(TAG, "Excluded app from tunnel (include mode): $pkgName")
+                        } catch (e: Exception) {
+                            Log.v(TAG, "Failed to exclude app: $pkgName", e)
+                        }
+                    }
+                    
+                    // Always exclude our own app to prevent routing loops
+                    try {
+                        builder.addDisallowedApplication(packageName)
+                        Log.d(TAG, "Excluded own app from tunnel: $packageName")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to exclude own app", e)
+                    }
+                    
+                    Log.d(TAG, "ROUTE_ONLY_INCLUDED mode configured with ${includedApps.size} included apps")
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error configuring ROUTE_ONLY_INCLUDED mode", e)
+                }
             }
-        }
-        
-        // Always exclude our own app to prevent routing loops
-        try {
-            builder.addDisallowedApplication(packageName)
-            Log.d(TAG, "Excluded own app from tunnel: $packageName")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to exclude own app", e)
         }
     }
     

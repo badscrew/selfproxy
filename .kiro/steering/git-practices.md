@@ -36,18 +36,6 @@ git --no-pager status
 - ✅ No environment variable management needed
 - ✅ Safe for automation and scripting
 
-### Alternative Solutions
-
-**Option 2: Set environment variable for session**
-```powershell
-$env:GIT_PAGER = ''
-git log  # Won't use pager
-```
-
-**Option 3: Configure git globally (not recommended for automation)**
-```powershell
-git config --global core.pager ''
-```
 
 ### Commands That Commonly Trigger Pager
 

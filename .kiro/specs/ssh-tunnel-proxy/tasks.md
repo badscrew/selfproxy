@@ -225,24 +225,32 @@
   - **Property 3: Active proxies route traffic through SSH server**
   - **Validates: Requirements 1.3**
 
-- [ ] 10. Implement per-app routing
+- [x] 10. Implement per-app routing
+
+
+
+
   - Add app selection UI for exclusions
   - Implement app exclusion using addDisallowedApplication
   - Implement routing configuration updates without reconnection
   - Add routing mode support (exclude vs include)
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 10.1 Write property test for app exclusion
+- [x] 10.1 Write property test for app exclusion
+
+
 
   - **Property 20: App routing exclusion correctness**
   - **Validates: Requirements 5.2**
 
-- [ ] 10.2 Write property test for app inclusion
+- [x] 10.2 Write property test for app inclusion
+
 
   - **Property 21: App routing inclusion correctness**
   - **Validates: Requirements 5.3**
 
-- [ ] 10.3 Write property test for routing updates
+- [x] 10.3 Write property test for routing updates
+
 
   - **Property 22: Routing changes apply without reconnection**
   - **Validates: Requirements 5.4**
