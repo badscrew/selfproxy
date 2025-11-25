@@ -180,6 +180,7 @@
 
 
 
+
   - Create SSHConnectionManager interface in commonMain
   - Implement connection state management with Flow
   - Implement connect, disconnect methods
@@ -202,7 +203,12 @@
 
 ## Phase 4: VPN Service and Traffic Routing
 
-- [ ] 9. Implement Android VPN Service
+- [x] 9. Implement Android VPN Service
+
+
+
+
+
   - Create VpnTunnelProvider interface in commonMain
   - Implement AndroidVpnTunnelProvider in androidMain
   - Extend Android VpnService class
@@ -212,7 +218,10 @@
   - Create foreground service notification
   - _Requirements: 1.3, 10.3_
 
-- [ ]* 9.1 Write property test for traffic routing
+- [x] 9.1 Write property test for traffic routing
+
+
+
   - **Property 3: Active proxies route traffic through SSH server**
   - **Validates: Requirements 1.3**
 
@@ -223,15 +232,18 @@
   - Add routing mode support (exclude vs include)
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ]* 10.1 Write property test for app exclusion
+- [ ] 10.1 Write property test for app exclusion
+
   - **Property 20: App routing exclusion correctness**
   - **Validates: Requirements 5.2**
 
-- [ ]* 10.2 Write property test for app inclusion
+- [ ] 10.2 Write property test for app inclusion
+
   - **Property 21: App routing inclusion correctness**
   - **Validates: Requirements 5.3**
 
-- [ ]* 10.3 Write property test for routing updates
+- [ ] 10.3 Write property test for routing updates
+
   - **Property 22: Routing changes apply without reconnection**
   - **Validates: Requirements 5.4**
 
@@ -247,7 +259,8 @@
   - Implement max retry interval (60 seconds)
   - _Requirements: 4.3_
 
-- [ ]* 12.1 Write property test for backoff pattern
+- [ ] 12.1 Write property test for backoff pattern
+
   - **Property 17: Exponential backoff retry pattern**
   - **Validates: Requirements 4.3**
 
@@ -266,19 +279,23 @@
   - Use WorkManager for background reconnection attempts
   - _Requirements: 4.1, 4.2, 4.4, 4.5_
 
-- [ ]* 14.1 Write property test for disconnection detection
+- [ ] 14.1 Write property test for disconnection detection
+
   - **Property 15: Disconnection detection**
   - **Validates: Requirements 4.1**
 
-- [ ]* 14.2 Write property test for reconnection attempts
+- [ ] 14.2 Write property test for reconnection attempts
+
   - **Property 16: Reconnection attempts after disconnection**
   - **Validates: Requirements 4.2**
 
-- [ ]* 14.3 Write property test for network change reconnection
+- [ ] 14.3 Write property test for network change reconnection
+
   - **Property 18: Network change triggers reconnection**
   - **Validates: Requirements 4.4**
 
-- [ ]* 14.4 Write property test for reconnection restoration
+- [ ] 14.4 Write property test for reconnection restoration
+
   - **Property 19: Successful reconnection restores proxy**
   - **Validates: Requirements 4.5**
 
