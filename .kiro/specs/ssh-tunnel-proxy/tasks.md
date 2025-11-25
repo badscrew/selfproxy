@@ -84,6 +84,7 @@
 
 
 
+
   - Create MainActivity with Jetpack Compose
   - Set up Hilt dependency injection
   - Create navigation structure (profiles, connection, settings screens)
@@ -91,7 +92,10 @@
   - Configure AndroidManifest with required permissions
   - _Requirements: Foundation for UI requirements_
 
-- [ ] 5. Implement Android Credential Store
+- [-] 5. Implement Android Credential Store
+
+
+
   - Create CredentialStore interface in commonMain
   - Implement AndroidCredentialStore in androidMain using Android Keystore
   - Implement key encryption using AES-256-GCM
