@@ -212,7 +212,7 @@
   - Handle VPN lifecycle (start, stop, revoke)
   - _Requirements: 1.3, 10.3_
 
-- [ ] 9.1 Implement packet routing from TUN to SOCKS5
+- [x] 9.1 Implement packet routing from TUN to SOCKS5
   - Read IP packets from TUN interface
   - Parse IP packet headers (source, destination, protocol)
   - Route TCP/UDP packets through SOCKS5 proxy

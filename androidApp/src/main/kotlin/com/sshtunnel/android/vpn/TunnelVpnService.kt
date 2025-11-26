@@ -28,7 +28,7 @@ class TunnelVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var socksPort: Int = 0
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var packetRouterJob: Job? = null
+    private var packetRouter: PacketRouter? = null
     
     companion object {
         private const val TAG = "TunnelVpnService"
@@ -84,9 +84,11 @@ class TunnelVpnService : VpnService() {
             startForeground(NOTIFICATION_ID, createNotification(serverAddress))
             
             // Start packet routing
-            packetRouterJob = serviceScope.launch {
-                routePackets()
-            }
+            val inputStream = FileInputStream(vpnInterface!!.fileDescriptor)
+            val outputStream = FileOutputStream(vpnInterface!!.fileDescriptor)
+            
+            packetRouter = PacketRouter(inputStream, outputStream, socksPort)
+            packetRouter?.start()
             
             android.util.Log.i(TAG, "VPN service started successfully")
         } catch (e: Exception) {
@@ -98,9 +100,9 @@ class TunnelVpnService : VpnService() {
     private fun stopVpn() {
         android.util.Log.i(TAG, "Stopping VPN service")
         
-        // Cancel packet routing
-        packetRouterJob?.cancel()
-        packetRouterJob = null
+        // Stop packet routing
+        packetRouter?.stop()
+        packetRouter = null
         
         // Close VPN interface
         vpnInterface?.close()
@@ -190,32 +192,7 @@ class TunnelVpnService : VpnService() {
             .build()
     }
     
-    private suspend fun routePackets() {
-        val vpn = vpnInterface ?: return
-        val inputStream = FileInputStream(vpn.fileDescriptor)
-        val outputStream = FileOutputStream(vpn.fileDescriptor)
-        val buffer = ByteArray(32767) // Max IP packet size
-        
-        withContext(Dispatchers.IO) {
-            try {
-                while (isActive) {
-                    val length = inputStream.read(buffer)
-                    if (length > 0) {
-                        // For now, just log that we received a packet
-                        // Full packet routing will be implemented in Task 9.1
-                        android.util.Log.v(TAG, "Received packet: $length bytes")
-                        
-                        // TODO: Parse packet and route through SOCKS5
-                        // This is a placeholder - actual routing in Task 9.1
-                    }
-                }
-            } catch (e: Exception) {
-                if (isActive) {
-                    android.util.Log.e(TAG, "Error routing packets: ${e.message}", e)
-                }
-            }
-        }
-    }
+
     
     override fun onRevoke() {
         android.util.Log.i(TAG, "VPN permission revoked")
