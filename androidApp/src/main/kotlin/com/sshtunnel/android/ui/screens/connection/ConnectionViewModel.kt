@@ -26,7 +26,8 @@ import javax.inject.Inject
 class ConnectionViewModel @Inject constructor(
     private val connectionManager: SSHConnectionManager,
     private val connectionTestService: ConnectionTestService,
-    private val profileRepository: ProfileRepository
+    private val profileRepository: ProfileRepository,
+    private val logger: com.sshtunnel.logging.Logger
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow<ConnectionUiState>(ConnectionUiState.Disconnected)
@@ -37,7 +38,12 @@ class ConnectionViewModel @Inject constructor(
     
     private var currentProfile: ServerProfile? = null
     
+    companion object {
+        private const val TAG = "ConnectionViewModel"
+    }
+    
     init {
+        logger.info(TAG, "ConnectionViewModel initialized")
         // Observe connection state changes
         viewModelScope.launch {
             connectionManager.observeConnectionState().collect { state ->
@@ -53,14 +59,17 @@ class ConnectionViewModel @Inject constructor(
      */
     fun setProfile(profileId: Long) {
         viewModelScope.launch {
+            logger.info(TAG, "Setting profile ID: $profileId")
             val profile = profileRepository.getProfile(profileId)
             currentProfile = profile
+            logger.verbose(TAG, "Profile set: ${profile?.name}")
             
             // If already connected to a different profile, show profile info
             if (_uiState.value is ConnectionUiState.Connected) {
                 val connectedState = _uiState.value as ConnectionUiState.Connected
                 if (connectedState.connection.profileId != profileId) {
                     // Different profile, disconnect first
+                    logger.info(TAG, "Different profile selected, disconnecting current connection")
                     disconnect()
                 }
             }
@@ -73,6 +82,7 @@ class ConnectionViewModel @Inject constructor(
     fun connect() {
         val profile = currentProfile
         if (profile == null) {
+            logger.error(TAG, "Connect called but no profile selected")
             _uiState.value = ConnectionUiState.Error(
                 "No profile selected",
                 null
@@ -80,12 +90,15 @@ class ConnectionViewModel @Inject constructor(
             return
         }
         
+        logger.info(TAG, "User initiated connection to profile: ${profile.name}")
+        
         viewModelScope.launch {
             // Clear any previous test results
             _testResult.value = TestResultState.None
             
             val result = connectionManager.connect(profile)
             result.onFailure { error ->
+                logger.error(TAG, "Connection failed in ViewModel: ${error.message}", error)
                 _uiState.value = ConnectionUiState.Error(
                     error.message ?: "Connection failed",
                     null
@@ -99,12 +112,14 @@ class ConnectionViewModel @Inject constructor(
      * Disconnects the current SSH connection.
      */
     fun disconnect() {
+        logger.info(TAG, "User initiated disconnect")
         viewModelScope.launch {
             // Clear test results
             _testResult.value = TestResultState.None
             
             val result = connectionManager.disconnect()
             result.onFailure { error ->
+                logger.error(TAG, "Disconnect failed: ${error.message}", error)
                 // Even if disconnect fails, we should show disconnected state
                 _uiState.value = ConnectionUiState.Disconnected
             }
@@ -150,20 +165,25 @@ class ConnectionViewModel @Inject constructor(
      * Updates UI state based on connection manager state.
      */
     private fun updateUiState(state: ConnectionState) {
+        logger.verbose(TAG, "Connection state changed: ${state::class.simpleName}")
         _uiState.value = when (state) {
             is ConnectionState.Disconnected -> {
+                logger.info(TAG, "UI state updated to Disconnected")
                 ConnectionUiState.Disconnected
             }
             is ConnectionState.Connecting -> {
+                logger.info(TAG, "UI state updated to Connecting")
                 ConnectionUiState.Connecting(currentProfile)
             }
             is ConnectionState.Connected -> {
+                logger.info(TAG, "UI state updated to Connected (SOCKS port: ${state.connection.socksPort})")
                 ConnectionUiState.Connected(
                     connection = state.connection,
                     profile = currentProfile
                 )
             }
             is ConnectionState.Error -> {
+                logger.error(TAG, "UI state updated to Error: ${state.error.message}")
                 ConnectionUiState.Error(
                     message = state.error.message,
                     error = state.error

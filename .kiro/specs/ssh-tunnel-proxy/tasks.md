@@ -443,7 +443,8 @@
   - Display SOCKS5 proxy address and port in UI
   - _Requirements: 8.5, 9.3, 12.4, 12.5_
 
-- [x] 18.1 Fix verbose logging synchronization
+- [ ] 18.1 Fix verbose logging synchronization
+
 
 
   - Modify SSHTunnelProxyApp to observe settings changes and apply verbose logging to Logger

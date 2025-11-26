@@ -53,19 +53,21 @@ object DatabaseModule {
     
     @Provides
     @Singleton
-    fun provideSSHClient(): SSHClient {
-        return AndroidSSHClient()
+    fun provideSSHClient(logger: com.sshtunnel.logging.Logger): SSHClient {
+        return AndroidSSHClient(logger)
     }
     
     @Provides
     @Singleton
     fun provideSSHConnectionManager(
         sshClient: SSHClient,
-        credentialStore: CredentialStore
+        credentialStore: CredentialStore,
+        logger: com.sshtunnel.logging.Logger
     ): SSHConnectionManager {
         return SSHConnectionManagerImpl(
             sshClient = sshClient,
-            credentialStore = credentialStore
+            credentialStore = credentialStore,
+            logger = logger
         )
     }
     

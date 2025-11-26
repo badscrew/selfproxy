@@ -5,6 +5,7 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.sshtunnel.data.KeyType
 import com.sshtunnel.data.ServerProfile
+import com.sshtunnel.logging.Logger
 import com.sshtunnel.storage.PrivateKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,9 +19,15 @@ import kotlin.time.Duration
  * This implementation handles SSH connections, dynamic port forwarding (SOCKS5),
  * and keep-alive packets for maintaining idle connections.
  */
-class AndroidSSHClient : SSHClient {
+class AndroidSSHClient(
+    private val logger: Logger
+) : SSHClient {
     
     private val jsch = JSch()
+    
+    companion object {
+        private const val TAG = "AndroidSSHClient"
+    }
     
     override suspend fun connect(
         profile: ServerProfile,
@@ -31,18 +38,26 @@ class AndroidSSHClient : SSHClient {
         strictHostKeyChecking: Boolean
     ): Result<SSHSession> = withContext(Dispatchers.IO) {
         try {
+            logger.info(TAG, "Attempting SSH connection to ${profile.hostname}:${profile.port} as ${profile.username}")
+            logger.verbose(TAG, "Connection settings: timeout=${connectionTimeout}, compression=$enableCompression, strictHostKeyChecking=$strictHostKeyChecking")
+            
             // Add the private key to JSch
             val keyName = "key_${profile.id}"
+            logger.verbose(TAG, "Adding private key (type: ${privateKey.keyType}) to JSch")
             if (passphrase != null) {
                 jsch.addIdentity(keyName, privateKey.keyData, null, passphrase.toByteArray())
+                logger.verbose(TAG, "Private key is passphrase-protected")
             } else {
                 jsch.addIdentity(keyName, privateKey.keyData, null, null)
+                logger.verbose(TAG, "Private key has no passphrase")
             }
             
             // Create SSH session
+            logger.verbose(TAG, "Creating JSch session")
             val session = jsch.getSession(profile.username, profile.hostname, profile.port)
             
             // Configure session properties
+            logger.verbose(TAG, "Configuring SSH session properties")
             val config = Properties().apply {
                 // Host key checking
                 setProperty("StrictHostKeyChecking", if (strictHostKeyChecking) "yes" else "no")
@@ -74,16 +89,21 @@ class AndroidSSHClient : SSHClient {
                 }
             }
             session.setConfig(config)
+            logger.verbose(TAG, "SSH config: kex=${config.getProperty("kex")}, server_host_key=${config.getProperty("server_host_key")}")
             
             // Set connection timeout (JSch expects milliseconds as int)
             val timeoutMs = connectionTimeout.inWholeMilliseconds.toInt()
             session.timeout = timeoutMs
+            logger.verbose(TAG, "Connection timeout set to ${timeoutMs}ms")
             
             // Connect
+            logger.info(TAG, "Connecting to SSH server...")
             session.connect()
+            logger.info(TAG, "SSH connection established successfully")
             
             // Generate unique session ID
             val sessionId = UUID.randomUUID().toString()
+            logger.verbose(TAG, "Generated session ID: $sessionId")
             
             // Create SSHSession wrapper
             val sshSession = SSHSession(
@@ -98,8 +118,12 @@ class AndroidSSHClient : SSHClient {
             Result.success(sshSession)
             
         } catch (e: JSchException) {
-            Result.failure(mapJSchException(e))
+            val mappedError = mapJSchException(e)
+            logger.error(TAG, "SSH connection failed: ${mappedError.message}", e)
+            logger.verbose(TAG, "JSch exception details: ${e.message}")
+            Result.failure(mappedError)
         } catch (e: Exception) {
+            logger.error(TAG, "Unexpected error during SSH connection", e)
             Result.failure(SSHError.Unknown("Unexpected error during connection", e))
         }
     }
@@ -109,12 +133,17 @@ class AndroidSSHClient : SSHClient {
         localPort: Int
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            logger.info(TAG, "Creating SOCKS5 port forwarding on local port $localPort")
+            
             val jschSession = session.nativeSession as? Session
                 ?: return@withContext Result.failure(
-                    SSHError.SessionClosed("Invalid or closed session")
+                    SSHError.SessionClosed("Invalid or closed session").also {
+                        logger.error(TAG, "Invalid session object when creating port forwarding")
+                    }
                 )
             
             if (!jschSession.isConnected) {
+                logger.error(TAG, "Session is not connected when attempting port forwarding")
                 return@withContext Result.failure(
                     SSHError.SessionClosed("Session is not connected")
                 )
@@ -123,11 +152,14 @@ class AndroidSSHClient : SSHClient {
             // Set up dynamic port forwarding (SOCKS5)
             // setPortForwardingL creates a local SOCKS5 proxy
             // Bind to localhost only for security
+            logger.verbose(TAG, "Setting up dynamic port forwarding (SOCKS5) on 127.0.0.1:$localPort")
             val actualPort = jschSession.setPortForwardingL("127.0.0.1", localPort, null, 0)
+            logger.info(TAG, "SOCKS5 proxy created successfully on port $actualPort")
             
             Result.success(actualPort)
             
         } catch (e: JSchException) {
+            logger.error(TAG, "Failed to create port forwarding: ${e.message}", e)
             // Check if port forwarding is disabled on the server
             if (e.message?.contains("forwarding", ignoreCase = true) == true) {
                 Result.failure(
@@ -140,6 +172,7 @@ class AndroidSSHClient : SSHClient {
                 Result.failure(mapJSchException(e))
             }
         } catch (e: Exception) {
+            logger.error(TAG, "Unexpected error creating port forwarding", e)
             Result.failure(SSHError.Unknown("Failed to create port forwarding", e))
         }
     }
@@ -148,37 +181,51 @@ class AndroidSSHClient : SSHClient {
         try {
             val jschSession = session.nativeSession as? Session
                 ?: return@withContext Result.failure(
-                    SSHError.SessionClosed("Invalid or closed session")
+                    SSHError.SessionClosed("Invalid or closed session").also {
+                        logger.warn(TAG, "Invalid session when sending keep-alive")
+                    }
                 )
             
             if (!jschSession.isConnected) {
+                logger.warn(TAG, "Session not connected when sending keep-alive")
                 return@withContext Result.failure(
                     SSHError.SessionClosed("Session is not connected")
                 )
             }
             
             // Send keep-alive packet
+            logger.verbose(TAG, "Sending SSH keep-alive packet")
             jschSession.sendKeepAliveMsg()
+            logger.verbose(TAG, "Keep-alive packet sent successfully")
             
             Result.success(Unit)
             
         } catch (e: Exception) {
+            logger.error(TAG, "Failed to send keep-alive", e)
             Result.failure(SSHError.Unknown("Failed to send keep-alive", e))
         }
     }
     
     override suspend fun disconnect(session: SSHSession): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            logger.info(TAG, "Disconnecting SSH session ${session.sessionId}")
+            
             val jschSession = session.nativeSession as? Session
-                ?: return@withContext Result.success(Unit) // Already disconnected
+                ?: return@withContext Result.success(Unit).also {
+                    logger.verbose(TAG, "Session already disconnected or invalid")
+                }
             
             if (jschSession.isConnected) {
                 jschSession.disconnect()
+                logger.info(TAG, "SSH session disconnected successfully")
+            } else {
+                logger.verbose(TAG, "Session was already disconnected")
             }
             
             Result.success(Unit)
             
         } catch (e: Exception) {
+            logger.error(TAG, "Error during disconnect", e)
             Result.failure(SSHError.Unknown("Error during disconnect", e))
         }
     }
