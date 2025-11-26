@@ -220,7 +220,7 @@
   - Handle packet fragmentation if needed
   - _Requirements: 1.3_
 
-- [ ] 9.2 Implement DNS routing through tunnel
+- [x] 9.2 Implement DNS routing through tunnel
   - Intercept DNS queries from TUN interface
   - Route DNS requests through SOCKS5 proxy
   - Configure VPN to use tunnel DNS servers
