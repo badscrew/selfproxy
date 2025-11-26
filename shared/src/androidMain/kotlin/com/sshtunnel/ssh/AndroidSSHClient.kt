@@ -41,20 +41,126 @@ class AndroidSSHClient(
             logger.info(TAG, "Attempting SSH connection to ${profile.hostname}:${profile.port} as ${profile.username}")
             logger.verbose(TAG, "Connection settings: timeout=${connectionTimeout}, compression=$enableCompression, strictHostKeyChecking=$strictHostKeyChecking")
             
+            // Log JSch version
+            logger.verbose(TAG, "JSch version: ${JSch.VERSION}")
+            
+            // Enable JSch internal logging for debugging (including DEBUG level)
+            JSch.setLogger(object : com.jcraft.jsch.Logger {
+                override fun isEnabled(level: Int): Boolean = true
+                
+                override fun log(level: Int, message: String?) {
+                    val levelStr = when (level) {
+                        com.jcraft.jsch.Logger.DEBUG -> "DEBUG"
+                        com.jcraft.jsch.Logger.INFO -> "INFO"
+                        com.jcraft.jsch.Logger.WARN -> "WARN"
+                        com.jcraft.jsch.Logger.ERROR -> "ERROR"
+                        com.jcraft.jsch.Logger.FATAL -> "FATAL"
+                        else -> "UNKNOWN"
+                    }
+                    // Log everything including DEBUG to see authentication details
+                    android.util.Log.v("JSch", "[$levelStr] $message")
+                }
+            })
+            
             // Add the private key to JSch
-            val keyName = "key_${profile.id}"
+            // JSch has issues with addIdentity(name, byte[], byte[], byte[]) for some key formats
+            // Use a temporary file approach which is more reliable
             logger.verbose(TAG, "Adding private key (type: ${privateKey.keyType}) to JSch")
-            if (passphrase != null) {
-                jsch.addIdentity(keyName, privateKey.keyData, null, passphrase.toByteArray())
-                logger.verbose(TAG, "Private key is passphrase-protected")
-            } else {
-                jsch.addIdentity(keyName, privateKey.keyData, null, null)
-                logger.verbose(TAG, "Private key has no passphrase")
+            logger.verbose(TAG, "Private key size: ${privateKey.keyData.size} bytes")
+            
+            // Log first few bytes of key to verify it's not corrupted (safe to log)
+            val keyPreview = privateKey.keyData.take(50).joinToString("") { 
+                String.format("%02x", it) 
+            }
+            logger.verbose(TAG, "Private key starts with: $keyPreview...")
+            
+            // Check if key looks like a valid format
+            val keyString = String(privateKey.keyData, Charsets.UTF_8)
+            val isPEM = keyString.startsWith("-----BEGIN")
+            logger.verbose(TAG, "Key format: ${if (isPEM) "PEM" else "Binary/Unknown"}")
+            
+            if (isPEM) {
+                val keyType = when {
+                    keyString.contains("BEGIN RSA PRIVATE KEY") -> "RSA (PKCS#1)"
+                    keyString.contains("BEGIN PRIVATE KEY") -> "PKCS#8"
+                    keyString.contains("BEGIN OPENSSH PRIVATE KEY") -> "OpenSSH"
+                    keyString.contains("BEGIN EC PRIVATE KEY") -> "EC"
+                    else -> "Unknown PEM type"
+                }
+                logger.verbose(TAG, "PEM key type: $keyType")
+            }
+            
+            try {
+                // Write key to temporary file (JSch works better with files)
+                val tempKeyFile = java.io.File.createTempFile("ssh_key_", ".pem")
+                try {
+                    tempKeyFile.writeBytes(privateKey.keyData)
+                    logger.verbose(TAG, "Wrote key to temporary file: ${tempKeyFile.absolutePath}")
+                    
+                    // Generate and log fingerprint BEFORE loading
+                    try {
+                        val keyPair = com.jcraft.jsch.KeyPair.load(jsch, tempKeyFile.absolutePath)
+                        val fingerprint = keyPair.getFingerPrint()
+                        logger.verbose(TAG, "Key fingerprint (MD5): $fingerprint")
+                        keyPair.dispose()
+                    } catch (e: Exception) {
+                        logger.error(TAG, "Could not generate fingerprint: ${e.message}")
+                    }
+                    
+                    // Load key from file
+                    if (passphrase != null) {
+                        jsch.addIdentity(tempKeyFile.absolutePath, passphrase)
+                        logger.verbose(TAG, "Private key is passphrase-protected")
+                    } else {
+                        jsch.addIdentity(tempKeyFile.absolutePath)
+                        logger.verbose(TAG, "Private key has no passphrase")
+                    }
+                    logger.verbose(TAG, "Private key added successfully to JSch")
+                } finally {
+                    // Clean up temp file immediately
+                    if (tempKeyFile.exists()) {
+                        tempKeyFile.delete()
+                        logger.verbose(TAG, "Temporary key file deleted")
+                    }
+                }
+                
+                // Verify the identity was added
+                val identities = jsch.identityRepository.identities
+                logger.verbose(TAG, "Total identities in JSch: ${identities.size}")
+                
+                // Log identity details
+                identities.forEachIndexed { index, identity ->
+                    logger.verbose(TAG, "Identity $index: ${identity.javaClass.simpleName}")
+                }
+            } catch (e: Exception) {
+                logger.error(TAG, "Failed to add private key: ${e.message}", e)
+                logger.verbose(TAG, "Key addition exception type: ${e.javaClass.simpleName}")
+                throw e
             }
             
             // Create SSH session
             logger.verbose(TAG, "Creating JSch session")
+            logger.verbose(TAG, "Connection details: user=${profile.username}, host=${profile.hostname}, port=${profile.port}")
             val session = jsch.getSession(profile.username, profile.hostname, profile.port)
+            logger.verbose(TAG, "JSch session created successfully")
+            
+            // IMPORTANT: Clear any existing identities to avoid conflicts
+            jsch.removeAllIdentity()
+            logger.verbose(TAG, "Cleared all existing identities")
+            
+            // Re-add our identity (JSch sometimes needs this after session creation)
+            val tempKeyFile2 = java.io.File.createTempFile("ssh_key_session_", ".pem")
+            try {
+                tempKeyFile2.writeBytes(privateKey.keyData)
+                if (passphrase != null) {
+                    jsch.addIdentity(tempKeyFile2.absolutePath, passphrase)
+                } else {
+                    jsch.addIdentity(tempKeyFile2.absolutePath)
+                }
+                logger.verbose(TAG, "Re-added identity for session")
+            } finally {
+                tempKeyFile2.delete()
+            }
             
             // Configure session properties
             logger.verbose(TAG, "Configuring SSH session properties")
@@ -75,21 +181,69 @@ class AndroidSSHClient(
                 // Preferred authentication methods (public key only)
                 setProperty("PreferredAuthentications", "publickey")
                 
-                // Key exchange algorithms (prefer modern algorithms)
+                // Key exchange algorithms
+                // JSch 0.1.55 has limited support for modern algorithms
+                // Using only algorithms that JSch definitely supports
                 setProperty(
                     "kex",
-                    "diffie-hellman-group-exchange-sha256,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1"
+                    "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521," +
+                    "diffie-hellman-group-exchange-sha256," +
+                    "diffie-hellman-group14-sha256," +
+                    "diffie-hellman-group14-sha1," +
+                    "diffie-hellman-group1-sha1"
                 )
                 
-                // Server host key algorithms
-                when (privateKey.keyType) {
-                    KeyType.ED25519 -> setProperty("server_host_key", "ssh-ed25519")
-                    KeyType.ECDSA -> setProperty("server_host_key", "ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521")
-                    KeyType.RSA -> setProperty("server_host_key", "ssh-rsa,rsa-sha2-256,rsa-sha2-512")
-                }
+                // Server host key algorithms (accept all common types)
+                // This specifies which host key types we accept from the SERVER
+                // (not related to our client authentication key type)
+                setProperty(
+                    "server_host_key",
+                    "ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521," +
+                    "ssh-rsa,ssh-dss"
+                )
+                
+                // CRITICAL: Set PubkeyAcceptedAlgorithms to include RSA signatures
+                // This tells the client which signature algorithms to use for authentication
+                setProperty(
+                    "PubkeyAcceptedAlgorithms",
+                    "ssh-rsa,rsa-sha2-256,rsa-sha2-512," +
+                    "ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521"
+                )
+                
+                // Cipher algorithms
+                // Using only ciphers that JSch 0.1.55 supports
+                setProperty(
+                    "cipher.s2c",
+                    "aes128-ctr,aes192-ctr,aes256-ctr," +
+                    "aes128-cbc,aes192-cbc,aes256-cbc," +
+                    "3des-cbc,blowfish-cbc"
+                )
+                setProperty(
+                    "cipher.c2s",
+                    "aes128-ctr,aes192-ctr,aes256-ctr," +
+                    "aes128-cbc,aes192-cbc,aes256-cbc," +
+                    "3des-cbc,blowfish-cbc"
+                )
+                
+                // MAC algorithms
+                // Using only MACs that JSch 0.1.55 supports
+                setProperty(
+                    "mac.s2c",
+                    "hmac-sha2-256,hmac-sha2-512," +
+                    "hmac-sha1,hmac-sha1-96,hmac-md5,hmac-md5-96"
+                )
+                setProperty(
+                    "mac.c2s",
+                    "hmac-sha2-256,hmac-sha2-512," +
+                    "hmac-sha1,hmac-sha1-96,hmac-md5,hmac-md5-96"
+                )
             }
             session.setConfig(config)
-            logger.verbose(TAG, "SSH config: kex=${config.getProperty("kex")}, server_host_key=${config.getProperty("server_host_key")}")
+            logger.verbose(TAG, "SSH config applied:")
+            logger.verbose(TAG, "  KEX: ${config.getProperty("kex")}")
+            logger.verbose(TAG, "  Server host key: ${config.getProperty("server_host_key")}")
+            logger.verbose(TAG, "  Ciphers: ${config.getProperty("cipher.c2s")}")
+            logger.verbose(TAG, "  MACs: ${config.getProperty("mac.c2s")}")
             
             // Set connection timeout (JSch expects milliseconds as int)
             val timeoutMs = connectionTimeout.inWholeMilliseconds.toInt()
@@ -98,8 +252,35 @@ class AndroidSSHClient(
             
             // Connect
             logger.info(TAG, "Connecting to SSH server...")
-            session.connect()
-            logger.info(TAG, "SSH connection established successfully")
+            logger.verbose(TAG, "Initiating TCP connection and SSH handshake...")
+            try {
+                session.connect()
+                logger.info(TAG, "SSH connection established successfully")
+                logger.verbose(TAG, "Server version: ${session.serverVersion}")
+                logger.verbose(TAG, "Client version: ${session.clientVersion}")
+                logger.verbose(TAG, "Session connected: ${session.isConnected}")
+            } catch (e: Exception) {
+                logger.error(TAG, "Connection attempt failed with exception: ${e.javaClass.simpleName}")
+                logger.verbose(TAG, "Exception message: ${e.message}")
+                logger.verbose(TAG, "Exception cause: ${e.cause?.message}")
+                
+                // Log authentication methods that were tried
+                if (e is com.jcraft.jsch.JSchException && e.message?.contains("Auth fail") == true) {
+                    logger.verbose(TAG, "Authentication failed - this means:")
+                    logger.verbose(TAG, "  1. TCP connection succeeded")
+                    logger.verbose(TAG, "  2. SSH handshake succeeded")
+                    logger.verbose(TAG, "  3. Key exchange succeeded")
+                    logger.verbose(TAG, "  4. But authentication was rejected by server")
+                    logger.verbose(TAG, "Possible causes:")
+                    logger.verbose(TAG, "  - Public key not in server's authorized_keys")
+                    logger.verbose(TAG, "  - Wrong username")
+                    logger.verbose(TAG, "  - Key format not supported by server")
+                    logger.verbose(TAG, "  - Server's sshd_config disables pubkey auth")
+                }
+                
+                logger.verbose(TAG, "Stack trace: ${e.stackTraceToString()}")
+                throw e
+            }
             
             // Generate unique session ID
             val sessionId = UUID.randomUUID().toString()

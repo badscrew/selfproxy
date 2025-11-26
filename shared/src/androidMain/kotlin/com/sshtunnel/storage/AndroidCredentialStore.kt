@@ -102,6 +102,8 @@ class AndroidCredentialStore(private val context: Context) : CredentialStore {
         passphrase: String?
     ): Result<PrivateKey> = withContext(Dispatchers.IO) {
         try {
+            android.util.Log.v("AndroidCredentialStore", "Retrieving key for profile $profileId")
+            
             // Retrieve encrypted key and IV
             val encryptedKeyBase64 = encryptedPrefs.getString(KEY_PREFIX + profileId, null)
                 ?: return@withContext Result.failure(
@@ -118,9 +120,13 @@ class AndroidCredentialStore(private val context: Context) : CredentialStore {
                     CredentialStoreException("No key type found for profile $profileId")
                 )
             
+            android.util.Log.v("AndroidCredentialStore", "Found encrypted key, IV, and type: $keyTypeString")
+            
             val encryptedKey = Base64.decode(encryptedKeyBase64, Base64.NO_WRAP)
             val iv = Base64.decode(ivBase64, Base64.NO_WRAP)
             val keyType = KeyType.valueOf(keyTypeString)
+            
+            android.util.Log.v("AndroidCredentialStore", "Encrypted key size: ${encryptedKey.size} bytes")
             
             // Get encryption key
             val secretKey = getOrCreateEncryptionKey()
@@ -131,8 +137,34 @@ class AndroidCredentialStore(private val context: Context) : CredentialStore {
             cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
             val decryptedKey = cipher.doFinal(encryptedKey)
             
+            android.util.Log.v("AndroidCredentialStore", "Decrypted key size: ${decryptedKey.size} bytes")
+            
+            // Log key format info
+            val keyString = String(decryptedKey, Charsets.UTF_8)
+            val isPEM = keyString.startsWith("-----BEGIN")
+            android.util.Log.v("AndroidCredentialStore", "Key format: ${if (isPEM) "PEM" else "Binary"}")
+            
+            if (isPEM) {
+                val lines = keyString.lines()
+                android.util.Log.v("AndroidCredentialStore", "First line: ${lines.firstOrNull()}")
+                android.util.Log.v("AndroidCredentialStore", "Last line: ${lines.lastOrNull()}")
+                android.util.Log.v("AndroidCredentialStore", "Total lines: ${lines.size}")
+                
+                // Check if the key content (between header and footer) is valid base64
+                val contentLines = lines.drop(1).dropLast(1).filter { it.isNotBlank() }
+                if (contentLines.isNotEmpty()) {
+                    val firstContentLine = contentLines.first()
+                    android.util.Log.v("AndroidCredentialStore", "First content line: $firstContentLine")
+                    android.util.Log.v("AndroidCredentialStore", "First content line length: ${firstContentLine.length}")
+                }
+            } else {
+                // If not PEM, log first 100 chars to see what it is
+                android.util.Log.v("AndroidCredentialStore", "Key content preview: ${keyString.take(100)}")
+            }
+            
             Result.success(PrivateKey(decryptedKey, keyType))
         } catch (e: Exception) {
+            android.util.Log.e("AndroidCredentialStore", "Failed to retrieve key: ${e.message}", e)
             Result.failure(CredentialStoreException("Failed to retrieve key for profile $profileId", e))
         }
     }

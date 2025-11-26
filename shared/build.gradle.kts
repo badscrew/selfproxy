@@ -68,8 +68,8 @@ kotlin {
                 // SQLDelight Android Driver
                 implementation("app.cash.sqldelight:android-driver:2.0.1")
                 
-                // JSch for SSH
-                implementation("com.jcraft:jsch:0.1.55")
+                // JSch for SSH (using maintained fork with RSA signature fixes)
+                implementation("com.github.mwiede:jsch:0.2.16")
                 
                 // Android Security
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
