@@ -37,8 +37,13 @@ class TunnelVpnService : VpnService() {
         
         const val ACTION_START = "com.sshtunnel.android.vpn.START"
         const val ACTION_STOP = "com.sshtunnel.android.vpn.STOP"
+        const val ACTION_VPN_ERROR = "com.sshtunnel.android.vpn.ERROR"
+        const val ACTION_VPN_STARTED = "com.sshtunnel.android.vpn.STARTED"
+        const val ACTION_VPN_STOPPED = "com.sshtunnel.android.vpn.STOPPED"
+        
         const val EXTRA_SOCKS_PORT = "socks_port"
         const val EXTRA_SERVER_ADDRESS = "server_address"
+        const val EXTRA_ERROR_MESSAGE = "error_message"
     }
     
     override fun onCreate() {
@@ -70,50 +75,133 @@ class TunnelVpnService : VpnService() {
     }
     
     private fun startVpn(serverAddress: String) {
-        try {
-            // Create TUN interface
-            vpnInterface = createTunInterface()
-            
-            if (vpnInterface == null) {
-                android.util.Log.e(TAG, "Failed to create TUN interface")
+        serviceScope.launch {
+            try {
+                android.util.Log.i(TAG, "Starting VPN with SOCKS port $socksPort")
+                
+                // Verify SOCKS proxy is reachable before starting VPN
+                if (!verifySocksProxy()) {
+                    android.util.Log.e(TAG, "SOCKS proxy not reachable on port $socksPort")
+                    broadcastVpnError("SOCKS proxy not reachable")
+                    stopSelf()
+                    return@launch
+                }
+                
+                // Create TUN interface
+                vpnInterface = createTunInterface()
+                
+                if (vpnInterface == null) {
+                    android.util.Log.e(TAG, "Failed to create TUN interface - VPN permission may be revoked")
+                    broadcastVpnError("Failed to create VPN interface")
+                    stopSelf()
+                    return@launch
+                }
+                
+                android.util.Log.i(TAG, "TUN interface created successfully")
+                
+                // Start foreground service with notification
+                startForeground(NOTIFICATION_ID, createNotification(serverAddress))
+                
+                // Start packet routing
+                val inputStream = FileInputStream(vpnInterface!!.fileDescriptor)
+                val outputStream = FileOutputStream(vpnInterface!!.fileDescriptor)
+                
+                packetRouter = PacketRouter(inputStream, outputStream, socksPort)
+                packetRouter?.start()
+                
+                android.util.Log.i(TAG, "VPN service started successfully - routing traffic through SOCKS port $socksPort")
+                broadcastVpnStarted()
+                
+            } catch (e: SecurityException) {
+                android.util.Log.e(TAG, "Security exception starting VPN - permission denied: ${e.message}", e)
+                broadcastVpnError("VPN permission denied")
                 stopSelf()
-                return
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to start VPN: ${e.message}", e)
+                broadcastVpnError("Failed to start VPN: ${e.message}")
+                stopSelf()
             }
-            
-            // Start foreground service with notification
-            startForeground(NOTIFICATION_ID, createNotification(serverAddress))
-            
-            // Start packet routing
-            val inputStream = FileInputStream(vpnInterface!!.fileDescriptor)
-            val outputStream = FileOutputStream(vpnInterface!!.fileDescriptor)
-            
-            packetRouter = PacketRouter(inputStream, outputStream, socksPort)
-            packetRouter?.start()
-            
-            android.util.Log.i(TAG, "VPN service started successfully")
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "Failed to start VPN: ${e.message}", e)
-            stopSelf()
         }
+    }
+    
+    /**
+     * Verifies that the SOCKS proxy is reachable before starting VPN.
+     * This prevents starting VPN when SSH connection is not ready.
+     */
+    private suspend fun verifySocksProxy(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val socket = Socket()
+                socket.connect(InetSocketAddress("127.0.0.1", socksPort), 2000)
+                socket.close()
+                android.util.Log.d(TAG, "SOCKS proxy verification successful")
+                true
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "SOCKS proxy verification failed: ${e.message}")
+                false
+            }
+        }
+    }
+    
+    /**
+     * Broadcasts VPN error to interested components.
+     */
+    private fun broadcastVpnError(errorMessage: String) {
+        android.util.Log.e(TAG, "Broadcasting VPN error: $errorMessage")
+        val intent = Intent(ACTION_VPN_ERROR).apply {
+            putExtra(EXTRA_ERROR_MESSAGE, errorMessage)
+        }
+        sendBroadcast(intent)
+    }
+    
+    /**
+     * Broadcasts VPN started event.
+     */
+    private fun broadcastVpnStarted() {
+        android.util.Log.d(TAG, "Broadcasting VPN started")
+        val intent = Intent(ACTION_VPN_STARTED)
+        sendBroadcast(intent)
+    }
+    
+    /**
+     * Broadcasts VPN stopped event.
+     */
+    private fun broadcastVpnStopped() {
+        android.util.Log.d(TAG, "Broadcasting VPN stopped")
+        val intent = Intent(ACTION_VPN_STOPPED)
+        sendBroadcast(intent)
     }
     
     private fun stopVpn() {
         android.util.Log.i(TAG, "Stopping VPN service")
         
-        // Stop packet routing
-        packetRouter?.stop()
-        packetRouter = null
-        
-        // Close VPN interface
-        vpnInterface?.close()
-        vpnInterface = null
-        
-        // Stop foreground
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+        try {
+            // Stop packet routing
+            packetRouter?.stop()
+            packetRouter = null
+            android.util.Log.d(TAG, "Packet router stopped")
+            
+            // Close VPN interface
+            vpnInterface?.close()
+            vpnInterface = null
+            android.util.Log.d(TAG, "VPN interface closed")
+            
+            // Stop foreground
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            
+            android.util.Log.i(TAG, "VPN service stopped successfully")
+            broadcastVpnStopped()
+            
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error stopping VPN service: ${e.message}", e)
+            // Ensure cleanup even if errors occur
+            packetRouter = null
+            vpnInterface = null
         }
     }
     

@@ -227,7 +227,7 @@
   - Prevent DNS leaks
   - _Requirements: 10.3_
 
-- [ ] 9.3 Integrate VPN with SSH Connection Manager
+- [x] 9.3 Integrate VPN with SSH Connection Manager
   - Start VPN service when SSH connection is established
   - Stop VPN service when SSH connection is terminated
   - Pass SOCKS5 port to VPN service

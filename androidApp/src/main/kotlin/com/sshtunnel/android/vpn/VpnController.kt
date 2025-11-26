@@ -7,6 +7,7 @@ import com.sshtunnel.ssh.SSHConnectionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -18,6 +19,13 @@ import javax.inject.Singleton
  * 
  * This controller observes the SSH connection state and automatically starts/stops
  * the VPN service when connections are established or terminated.
+ * 
+ * Integration features:
+ * - Starts VPN when SSH connection is established
+ * - Stops VPN when SSH connection is terminated
+ * - Passes SOCKS5 port to VPN service
+ * - Handles VPN errors and reports to Connection Manager
+ * - Ensures VPN is stopped on SSH disconnection
  */
 @Singleton
 class VpnController @Inject constructor(
@@ -26,9 +34,12 @@ class VpnController @Inject constructor(
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isVpnActive = false
+    private var currentSocksPort: Int = 0
     
     companion object {
         private const val TAG = "VpnController"
+        private const val VPN_START_RETRY_DELAY_MS = 1000L
+        private const val MAX_VPN_START_RETRIES = 3
     }
     
     init {
@@ -56,12 +67,18 @@ class VpnController @Inject constructor(
     }
     
     private fun startVpn(socksPort: Int, serverAddress: String) {
-        if (isVpnActive) {
-            android.util.Log.d(TAG, "VPN already active, skipping start")
+        if (isVpnActive && currentSocksPort == socksPort) {
+            android.util.Log.d(TAG, "VPN already active with same SOCKS port, skipping start")
             return
         }
         
-        android.util.Log.i(TAG, "Starting VPN service (SOCKS port: $socksPort)")
+        // If VPN is active but with different SOCKS port, stop it first
+        if (isVpnActive && currentSocksPort != socksPort) {
+            android.util.Log.i(TAG, "VPN active with different SOCKS port, restarting")
+            stopVpn()
+        }
+        
+        android.util.Log.i(TAG, "Starting VPN service (SOCKS port: $socksPort, server: $serverAddress)")
         
         val intent = Intent(context, TunnelVpnService::class.java).apply {
             action = TunnelVpnService.ACTION_START
@@ -72,9 +89,15 @@ class VpnController @Inject constructor(
         try {
             context.startService(intent)
             isVpnActive = true
-            android.util.Log.i(TAG, "VPN service start requested")
+            currentSocksPort = socksPort
+            android.util.Log.i(TAG, "VPN service start requested successfully")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to start VPN service: ${e.message}", e)
+            isVpnActive = false
+            currentSocksPort = 0
+            
+            // Report VPN error - this could trigger SSH disconnection if needed
+            handleVpnError("Failed to start VPN service: ${e.message}")
         }
     }
     
@@ -93,9 +116,48 @@ class VpnController @Inject constructor(
         try {
             context.startService(intent)
             isVpnActive = false
-            android.util.Log.i(TAG, "VPN service stop requested")
+            currentSocksPort = 0
+            android.util.Log.i(TAG, "VPN service stop requested successfully")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to stop VPN service: ${e.message}", e)
+            // Even if stop fails, mark as inactive
+            isVpnActive = false
+            currentSocksPort = 0
         }
     }
+    
+    /**
+     * Handles VPN errors by logging and potentially triggering SSH disconnection.
+     * 
+     * @param errorMessage The error message describing what went wrong
+     */
+    private fun handleVpnError(errorMessage: String) {
+        android.util.Log.e(TAG, "VPN error: $errorMessage")
+        
+        // For now, we just log the error
+        // In the future, we could:
+        // - Trigger SSH disconnection if VPN fails critically
+        // - Show user notification about VPN failure
+        // - Attempt to restart VPN service
+        
+        // Optionally disconnect SSH if VPN fails
+        scope.launch {
+            android.util.Log.w(TAG, "VPN failed, disconnecting SSH connection")
+            connectionManager.disconnect()
+        }
+    }
+    
+    /**
+     * Checks if VPN service is currently active.
+     * 
+     * @return true if VPN is active, false otherwise
+     */
+    fun isVpnActive(): Boolean = isVpnActive
+    
+    /**
+     * Gets the current SOCKS port being used by VPN.
+     * 
+     * @return SOCKS port number, or 0 if VPN is not active
+     */
+    fun getCurrentSocksPort(): Int = currentSocksPort
 }
