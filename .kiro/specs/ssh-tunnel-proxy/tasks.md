@@ -204,24 +204,37 @@
 ## Phase 4: VPN Service and Traffic Routing
 
 - [x] 9. Implement Android VPN Service
-
-
-
-
-
-  - Create VpnTunnelProvider interface in commonMain
-  - Implement AndroidVpnTunnelProvider in androidMain
-  - Extend Android VpnService class
-  - Create TUN interface configuration
-  - Implement packet routing through SOCKS5 proxy
-  - Add DNS routing through tunnel
-  - Create foreground service notification
+  - Create TunnelVpnService extending Android VpnService class
+  - Implement VPN permission request flow in UI
+  - Create TUN interface with proper configuration (IP, routes, DNS)
+  - Implement foreground service with persistent notification
+  - Add notification actions (disconnect, settings)
+  - Handle VPN lifecycle (start, stop, revoke)
   - _Requirements: 1.3, 10.3_
 
-- [x] 9.1 Write property test for traffic routing
+- [ ] 9.1 Implement packet routing from TUN to SOCKS5
+  - Read IP packets from TUN interface
+  - Parse IP packet headers (source, destination, protocol)
+  - Route TCP/UDP packets through SOCKS5 proxy
+  - Write response packets back to TUN interface
+  - Handle packet fragmentation if needed
+  - _Requirements: 1.3_
 
+- [ ] 9.2 Implement DNS routing through tunnel
+  - Intercept DNS queries from TUN interface
+  - Route DNS requests through SOCKS5 proxy
+  - Configure VPN to use tunnel DNS servers
+  - Prevent DNS leaks
+  - _Requirements: 10.3_
 
+- [ ] 9.3 Integrate VPN with SSH Connection Manager
+  - Start VPN service when SSH connection is established
+  - Stop VPN service when SSH connection is terminated
+  - Pass SOCKS5 port to VPN service
+  - Handle VPN errors and report to Connection Manager
+  - _Requirements: 1.3, 1.4_
 
+- [ ]* 9.4 Write property test for traffic routing
   - **Property 3: Active proxies route traffic through SSH server**
   - **Validates: Requirements 1.3**
 

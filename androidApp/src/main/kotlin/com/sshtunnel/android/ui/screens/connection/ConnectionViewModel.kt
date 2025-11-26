@@ -36,10 +36,30 @@ class ConnectionViewModel @Inject constructor(
     private val _testResult = MutableStateFlow<TestResultState>(TestResultState.None)
     val testResult: StateFlow<TestResultState> = _testResult.asStateFlow()
     
+    private val _vpnPermissionNeeded = MutableStateFlow(false)
+    val vpnPermissionNeeded: StateFlow<Boolean> = _vpnPermissionNeeded.asStateFlow()
+    
     private var currentProfile: ServerProfile? = null
     
     companion object {
         private const val TAG = "ConnectionViewModel"
+    }
+    
+    /**
+     * Called when VPN permission is granted by the user.
+     */
+    fun onVpnPermissionGranted() {
+        logger.info(TAG, "VPN permission granted")
+        _vpnPermissionNeeded.value = false
+    }
+    
+    /**
+     * Called when VPN permission is denied by the user.
+     */
+    fun onVpnPermissionDenied() {
+        logger.info(TAG, "VPN permission denied")
+        _vpnPermissionNeeded.value = false
+        // Note: VPN won't work without permission, but SSH connection will still work
     }
     
     init {
@@ -91,6 +111,9 @@ class ConnectionViewModel @Inject constructor(
         }
         
         logger.info(TAG, "User initiated connection to profile: ${profile.name}")
+        
+        // Request VPN permission first
+        _vpnPermissionNeeded.value = true
         
         viewModelScope.launch {
             // Clear any previous test results

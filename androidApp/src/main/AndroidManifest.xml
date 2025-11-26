@@ -43,7 +43,7 @@
         
         <!-- VPN Service -->
         <service
-            android:name="com.sshtunnel.vpn.TunnelVpnService"
+            android:name=".vpn.TunnelVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="true">
             <intent-filter>

@@ -21,6 +21,9 @@ class SSHTunnelProxyApp : Application() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
     
+    @Inject
+    lateinit var vpnController: com.sshtunnel.android.vpn.VpnController
+    
     // Application-scoped coroutine scope
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     
@@ -29,6 +32,11 @@ class SSHTunnelProxyApp : Application() {
         
         // Log app initialization
         logger.info("SSHTunnelProxyApp", "Application onCreate() called")
+        
+        // Initialize VPN controller (starts observing connection state)
+        // We need to reference it to ensure Hilt initializes it
+        vpnController.toString() // Force initialization
+        logger.info("SSHTunnelProxyApp", "VPN controller initialized")
         
         // Initialize logger with persisted verbose logging setting
         // and keep it synchronized with settings changes

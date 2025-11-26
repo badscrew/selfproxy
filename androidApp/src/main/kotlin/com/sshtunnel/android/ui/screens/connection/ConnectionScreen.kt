@@ -37,6 +37,33 @@ fun ConnectionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val testResult by viewModel.testResult.collectAsState()
+    val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsState()
+    
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    // VPN permission launcher
+    val vpnPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.onVpnPermissionGranted()
+        } else {
+            viewModel.onVpnPermissionDenied()
+        }
+    }
+    
+    // Request VPN permission when needed
+    LaunchedEffect(vpnPermissionNeeded) {
+        if (vpnPermissionNeeded) {
+            val intent = android.net.VpnService.prepare(context)
+            if (intent != null) {
+                vpnPermissionLauncher.launch(intent)
+            } else {
+                // Permission already granted
+                viewModel.onVpnPermissionGranted()
+            }
+        }
+    }
     
     // Set profile if provided
     LaunchedEffect(profileId) {
