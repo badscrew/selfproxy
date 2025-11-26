@@ -165,3 +165,6 @@ SSH Tunnel Proxy is a mobile application (initially Android, with future iOS sup
 3. WHEN the test completes, THE SSH_Tunnel_Proxy_App SHALL display whether the IP address matches the SSH_Server location
 4. WHEN the tunnel is active, THE SSH_Tunnel_Proxy_App SHALL display the local SOCKS5_Proxy address and port for manual configuration
 5. WHEN a user enables verbose logging, THE SSH_Tunnel_Proxy_App SHALL log detailed connection events for debugging purposes
+6. WHEN the app starts, THE SSH_Tunnel_Proxy_App SHALL initialize the Logger with the persisted verbose logging setting from storage
+7. WHEN a user toggles verbose logging in settings, THE SSH_Tunnel_Proxy_App SHALL immediately apply the setting to the Logger instance
+8. WHEN verbose logging is enabled, THE Logger SHALL produce and store verbose-level log entries that appear in exported logs

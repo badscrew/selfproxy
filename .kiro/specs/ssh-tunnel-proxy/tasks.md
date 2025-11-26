@@ -443,11 +443,34 @@
   - Display SOCKS5 proxy address and port in UI
   - _Requirements: 8.5, 9.3, 12.4, 12.5_
 
-- [ ]* 18.1 Write property test for log sanitization
+- [x] 18.1 Fix verbose logging synchronization
+
+
+  - Modify SSHTunnelProxyApp to observe settings changes and apply verbose logging to Logger
+  - Ensure Logger is initialized with persisted verbose setting on app startup
+  - Add lifecycleScope to Application class for coroutine management
+  - Use distinctUntilChanged() to avoid redundant Logger updates
+  - Test that enabling verbose logging immediately produces verbose log entries
+  - Test that exported logs contain verbose entries when verbose logging is enabled
+  - _Requirements: 12.6, 12.7, 12.8_
+
+- [ ]* 18.2 Write property test for logger initialization
+  - **Property 34: Logger initialization synchronizes with settings**
+  - **Validates: Requirements 12.6**
+
+- [ ]* 18.3 Write property test for verbose toggle
+  - **Property 35: Verbose logging toggle applies immediately**
+  - **Validates: Requirements 12.7**
+
+- [ ]* 18.4 Write property test for verbose log export
+  - **Property 36: Verbose logs appear in exports when enabled**
+  - **Validates: Requirements 12.8**
+
+- [ ]* 18.5 Write property test for log sanitization
   - **Property 25: Error logging excludes sensitive data**
   - **Validates: Requirements 8.5, 9.3**
 
-- [ ]* 18.2 Write property test for verbose logging
+- [ ]* 18.6 Write property test for verbose logging detail
   - **Property 33: Verbose logging increases detail**
   - **Validates: Requirements 12.5**
 

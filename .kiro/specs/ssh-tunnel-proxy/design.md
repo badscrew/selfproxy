@@ -350,6 +350,50 @@ class ConnectionTestServiceImpl(
 - Measures round-trip latency
 - Fully shared implementation
 
+### 7. Logger Initialization and Synchronization
+
+**Responsibility**: Ensure Logger verbose mode stays synchronized with user settings
+
+**Problem**: The Logger instance has a `setVerboseEnabled()` method, but it's never called when the user toggles the setting. This results in verbose logs not being produced even when the setting is enabled.
+
+**Solution**: Synchronize the Logger with settings in two places:
+
+1. **App Initialization**: When the app starts, read the verbose logging setting from DataStore and apply it to the Logger
+2. **Settings Changes**: When the user toggles verbose logging, immediately call `Logger.setVerboseEnabled()`
+
+```kotlin
+// In SSHTunnelProxyApp (Application class)
+@HiltAndroidApp
+class SSHTunnelProxyApp : Application() {
+    @Inject
+    lateinit var logger: Logger
+    
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+    
+    override fun onCreate() {
+        super.onCreate()
+        
+        // Initialize logger with persisted setting
+        lifecycleScope.launch {
+            settingsRepository.settingsFlow
+                .map { it.verboseLogging }
+                .distinctUntilChanged()
+                .collect { verboseEnabled ->
+                    logger.setVerboseEnabled(verboseEnabled)
+                }
+        }
+    }
+}
+```
+
+**Implementation Details**:
+- Use a coroutine in the Application class to observe settings changes
+- Apply the verbose setting to the Logger whenever it changes
+- Use `distinctUntilChanged()` to avoid redundant updates
+- This ensures the Logger is always in sync with user preferences
+- The Logger will produce verbose logs immediately after the setting is enabled
+
 ## Data Models
 
 ### ServerProfile
@@ -591,6 +635,18 @@ Before defining properties, we identify potential redundancies:
 **Property 33: Verbose logging increases detail**
 *For any* connection event, enabling verbose logging should produce more detailed log entries than standard logging.
 **Validates: Requirements 12.5**
+
+**Property 34: Logger initialization synchronizes with settings**
+*For any* app startup, the Logger should be initialized with the verbose logging setting value from persistent storage before any log entries are produced.
+**Validates: Requirements 12.6**
+
+**Property 35: Verbose logging toggle applies immediately**
+*For any* change to the verbose logging setting, the Logger's verbose mode should be updated immediately to match the new setting.
+**Validates: Requirements 12.7**
+
+**Property 36: Verbose logs appear in exports when enabled**
+*For any* log export operation with verbose logging enabled, the exported file should contain verbose-level log entries.
+**Validates: Requirements 12.8**
 
 ## Error Handling
 
