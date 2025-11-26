@@ -12,6 +12,7 @@ import com.sshtunnel.ssh.ConnectionState
 import com.sshtunnel.ssh.SSHConnectionManagerImpl
 import com.sshtunnel.storage.AndroidCredentialStore
 import com.sshtunnel.storage.AndroidSSHKeyParser
+import com.sshtunnel.mocks.MockCredentialStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -47,7 +48,7 @@ class EndToEndConnectionFlowTest {
     private lateinit var driver: AndroidSqliteDriver
     private lateinit var database: SSHTunnelDatabase
     private lateinit var profileRepository: ProfileRepositoryImpl
-    private lateinit var credentialStore: AndroidCredentialStore
+    private lateinit var credentialStore: MockCredentialStore
     private lateinit var keyParser: AndroidSSHKeyParser
     private lateinit var sshClient: AndroidSSHClient
     private lateinit var connectionManager: SSHConnectionManagerImpl
@@ -76,7 +77,7 @@ class EndToEndConnectionFlowTest {
         
         // Set up components
         profileRepository = ProfileRepositoryImpl(database)
-        credentialStore = AndroidCredentialStore(context)
+        credentialStore = MockCredentialStore() // Use mock for testing
         keyParser = AndroidSSHKeyParser()
         sshClient = AndroidSSHClient()
         connectionManager = SSHConnectionManagerImpl(
@@ -88,6 +89,7 @@ class EndToEndConnectionFlowTest {
     @After
     fun teardown() {
         driver.close()
+        credentialStore.clear()
     }
     
     @Test

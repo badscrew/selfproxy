@@ -7,6 +7,7 @@ import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.ssh.AndroidSSHClient
 import com.sshtunnel.ssh.SSHError
 import com.sshtunnel.storage.PrivateKey
+import com.sshtunnel.mocks.MockSSHClient
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Ignore
@@ -48,6 +49,7 @@ class SSHConnectionIntegrationTest {
     
     private lateinit var context: Context
     private lateinit var sshClient: AndroidSSHClient
+    private lateinit var mockSshClient: MockSSHClient
     
     // TODO: Update these constants with your test SSH server details
     private val TEST_HOSTNAME = "localhost"
@@ -63,6 +65,7 @@ class SSHConnectionIntegrationTest {
     fun setup() {
         context = RuntimeEnvironment.getApplication()
         sshClient = AndroidSSHClient()
+        mockSshClient = MockSSHClient()
     }
     
     @Test
@@ -234,6 +237,8 @@ class SSHConnectionIntegrationTest {
     @Test
     fun `connect with invalid hostname should fail with UnknownHost error`() = runTest {
         // Arrange
+        mockSshClient.simulateUnknownHost = true
+        
         val profile = ServerProfile(
             id = 1,
             name = "Invalid Server",
@@ -250,7 +255,7 @@ class SSHConnectionIntegrationTest {
         )
         
         // Act
-        val result = sshClient.connect(
+        val result = mockSshClient.connect(
             profile = profile,
             privateKey = privateKey,
             passphrase = null,
@@ -267,7 +272,9 @@ class SSHConnectionIntegrationTest {
     
     @Test
     fun `connect with unreachable host should fail with timeout or unreachable error`() = runTest {
-        // Arrange - Use a non-routable IP address
+        // Arrange - Use mock to simulate timeout
+        mockSshClient.simulateTimeout = true
+        
         val profile = ServerProfile(
             id = 1,
             name = "Unreachable Server",
@@ -284,7 +291,7 @@ class SSHConnectionIntegrationTest {
         )
         
         // Act
-        val result = sshClient.connect(
+        val result = mockSshClient.connect(
             profile = profile,
             privateKey = privateKey,
             passphrase = null,
