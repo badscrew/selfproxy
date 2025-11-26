@@ -28,7 +28,7 @@ class TunnelVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var socksPort: Int = 0
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var packetRouter: PacketRouter? = null
+    private var tun2socks: Tun2SocksEngine? = null
     
     companion object {
         private const val TAG = "TunnelVpnService"
@@ -102,12 +102,19 @@ class TunnelVpnService : VpnService() {
                 // Start foreground service with notification
                 startForeground(NOTIFICATION_ID, createNotification(serverAddress))
                 
-                // Start packet routing
+                // Start tun2socks engine
                 val inputStream = FileInputStream(vpnInterface!!.fileDescriptor)
                 val outputStream = FileOutputStream(vpnInterface!!.fileDescriptor)
                 
-                packetRouter = PacketRouter(inputStream, outputStream, socksPort)
-                packetRouter?.start()
+                tun2socks = Tun2SocksEngine(inputStream, outputStream, socksPort)
+                val startResult = tun2socks!!.start()
+                
+                if (startResult.isFailure) {
+                    android.util.Log.e(TAG, "Failed to start tun2socks: ${startResult.exceptionOrNull()?.message}")
+                    broadcastVpnError("Failed to start packet routing")
+                    stopSelf()
+                    return@launch
+                }
                 
                 android.util.Log.i(TAG, "VPN service started successfully - routing traffic through SOCKS port $socksPort")
                 broadcastVpnStarted()
@@ -176,10 +183,10 @@ class TunnelVpnService : VpnService() {
         android.util.Log.i(TAG, "Stopping VPN service")
         
         try {
-            // Stop packet routing
-            packetRouter?.stop()
-            packetRouter = null
-            android.util.Log.d(TAG, "Packet router stopped")
+            // Stop tun2socks engine
+            tun2socks?.stop()
+            tun2socks = null
+            android.util.Log.d(TAG, "Tun2socks engine stopped")
             
             // Close VPN interface
             vpnInterface?.close()
@@ -200,7 +207,7 @@ class TunnelVpnService : VpnService() {
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Error stopping VPN service: ${e.message}", e)
             // Ensure cleanup even if errors occur
-            packetRouter = null
+            tun2socks = null
             vpnInterface = null
         }
     }
