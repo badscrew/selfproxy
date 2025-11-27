@@ -59,6 +59,7 @@
 
 
 
+
   - Create ConnectionKey data class with Protocol enum
   - Create TcpConnection data class with TcpState enum
   - Create UdpConnection data class
@@ -67,7 +68,11 @@
   - Create SequenceNumberTracker class for TCP sequence management
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 4. Implement ConnectionTable
+- [x] 4. Implement ConnectionTable
+
+
+
+
   - Create ConnectionTable class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement addTcpConnection(), getTcpConnection(), removeTcpConnection()
   - Implement addUdpConnection(), getUdpConnection(), removeUdpConnection()
@@ -77,14 +82,18 @@
   - Add thread-safe access with Mutex
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 4.1 Write unit tests for ConnectionTable
+- [x] 4.1 Write unit tests for ConnectionTable
+
+
   - Test adding and retrieving connections
   - Test connection removal
   - Test idle connection cleanup
   - Test statistics tracking
   - Test thread safety with concurrent access
 
-- [ ] 4.2 Write property test for connection table
+- [x] 4.2 Write property test for connection table
+
+
   - **Property: TCP connection establishment always creates connection table entry**
   - Test with various connection parameters
 
