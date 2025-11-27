@@ -114,10 +114,12 @@ fun ProfileFormDialog(
             Text(if (isEditing) "Edit Profile" else "New Profile")
         },
         text = {
+            val scrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                    .heightIn(max = 280.dp) // Reduced height to ensure scrolling works with keyboard
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Name field
