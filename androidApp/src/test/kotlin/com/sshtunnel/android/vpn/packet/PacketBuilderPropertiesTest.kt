@@ -1,5 +1,6 @@
 package com.sshtunnel.android.vpn.packet
 
+import com.sshtunnel.android.vpn.TcpFlags
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.property.Arb

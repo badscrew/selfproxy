@@ -1,5 +1,6 @@
 package com.sshtunnel.android.vpn.packet
 
+import com.sshtunnel.android.vpn.TcpFlags
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import kotlin.random.Random
@@ -343,44 +344,4 @@ class PacketBuilder {
     }
 }
 
-/**
- * TCP flags for packet construction.
- */
-data class TcpFlags(
-    val fin: Boolean = false,
-    val syn: Boolean = false,
-    val rst: Boolean = false,
-    val psh: Boolean = false,
-    val ack: Boolean = false,
-    val urg: Boolean = false
-) {
-    /**
-     * Converts flags to a byte value for the TCP header.
-     */
-    fun toByte(): Int {
-        var flags = 0
-        if (fin) flags = flags or 0x01
-        if (syn) flags = flags or 0x02
-        if (rst) flags = flags or 0x04
-        if (psh) flags = flags or 0x08
-        if (ack) flags = flags or 0x10
-        if (urg) flags = flags or 0x20
-        return flags
-    }
-    
-    companion object {
-        /**
-         * Creates TcpFlags from a byte value.
-         */
-        fun fromByte(byte: Int): TcpFlags {
-            return TcpFlags(
-                fin = (byte and 0x01) != 0,
-                syn = (byte and 0x02) != 0,
-                rst = (byte and 0x04) != 0,
-                psh = (byte and 0x08) != 0,
-                ack = (byte and 0x10) != 0,
-                urg = (byte and 0x20) != 0
-            )
-        }
-    }
-}
+

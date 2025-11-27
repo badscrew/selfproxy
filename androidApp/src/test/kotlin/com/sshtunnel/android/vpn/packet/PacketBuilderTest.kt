@@ -1,5 +1,6 @@
 package com.sshtunnel.android.vpn.packet
 
+import com.sshtunnel.android.vpn.TcpFlags
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test

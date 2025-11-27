@@ -1,11 +1,18 @@
 package com.sshtunnel.android.vpn
 
 import com.sshtunnel.android.vpn.packet.IPv4Header
+import com.sshtunnel.android.vpn.packet.PacketBuilder
 import com.sshtunnel.logging.Logger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 
@@ -26,7 +33,11 @@ class TCPHandler(
 ) {
     companion object {
         private const val TAG = "TCPHandler"
+        private const val SOCKS5_CONNECT_TIMEOUT_MS = 5000
     }
+    
+    private val packetBuilder = PacketBuilder()
+    private val handlerScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     /**
      * Handles a TCP packet from the TUN interface.
@@ -54,11 +65,37 @@ class TCPHandler(
             "seq=${tcpHeader.sequenceNumber} ack=${tcpHeader.acknowledgmentNumber}"
         )
         
-        // TODO: Implement connection handling in future tasks
-        // - handleSyn() for SYN packets
-        // - handleData() for data packets
-        // - handleFin() for FIN packets
-        // - handleRst() for RST packets
+        // Create connection key
+        val key = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = ipHeader.sourceIP,
+            sourcePort = tcpHeader.sourcePort,
+            destIp = ipHeader.destIP,
+            destPort = tcpHeader.destPort
+        )
+        
+        // Handle based on flags
+        when {
+            tcpHeader.flags.syn && !tcpHeader.flags.ack -> {
+                // SYN packet - new connection
+                handleSyn(key, tcpHeader, tunOutputStream)
+            }
+            tcpHeader.flags.rst -> {
+                // RST packet - close connection
+                // TODO: Implement in task 9
+                logger.verbose(TAG, "RST packet received for $key")
+            }
+            tcpHeader.flags.fin -> {
+                // FIN packet - close connection
+                // TODO: Implement in task 9
+                logger.verbose(TAG, "FIN packet received for $key")
+            }
+            else -> {
+                // Data or ACK packet
+                // TODO: Implement in task 8
+                logger.verbose(TAG, "Data/ACK packet received for $key")
+            }
+        }
     }
     
     /**
@@ -281,6 +318,307 @@ class TCPHandler(
             logger.error(TAG, "SOCKS5 handshake error: ${e.message}", e)
             false
         }
+    }
+    
+    /**
+     * Handles a TCP SYN packet to establish a new connection.
+     * 
+     * This method:
+     * 1. Creates a ConnectionKey from the packet
+     * 2. Establishes a SOCKS5 connection to the destination
+     * 3. Performs SOCKS5 handshake
+     * 4. Adds the connection to the ConnectionTable
+     * 5. Starts a connection reader coroutine
+     * 6. Sends a SYN-ACK packet back to TUN
+     * 
+     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4
+     * 
+     * @param key The connection key (5-tuple)
+     * @param tcpHeader The parsed TCP header from the SYN packet
+     * @param tunOutputStream Output stream to write response packets
+     */
+    private suspend fun handleSyn(
+        key: ConnectionKey,
+        tcpHeader: TcpHeader,
+        tunOutputStream: FileOutputStream
+    ) {
+        logger.debug(TAG, "Handling SYN for new connection: $key")
+        
+        // Check if connection already exists
+        val existing = connectionTable.getTcpConnection(key)
+        if (existing != null) {
+            logger.verbose(TAG, "Connection already exists for $key, ignoring SYN")
+            return
+        }
+        
+        // Establish SOCKS5 connection
+        val socksSocket = establishSocks5Connection(key) ?: run {
+            logger.error(TAG, "Failed to establish SOCKS5 connection for $key")
+            sendTcpRst(tunOutputStream, key)
+            return
+        }
+        
+        logger.debug(TAG, "SOCKS5 connection established for $key")
+        
+        // Initialize sequence numbers
+        // Our initial sequence number (random)
+        val ourSeqNum = kotlin.random.Random.nextLong(0, 0xFFFFFFFF)
+        // Acknowledge their sequence number + 1
+        val theirSeqNum = tcpHeader.sequenceNumber
+        val ourAckNum = (theirSeqNum + 1) and 0xFFFFFFFF
+        
+        // Create connection object
+        val now = System.currentTimeMillis()
+        val readerJob = startConnectionReader(key, socksSocket, tunOutputStream, ourSeqNum, ourAckNum)
+        
+        val connection = TcpConnection(
+            key = key,
+            socksSocket = socksSocket,
+            state = TcpState.ESTABLISHED,
+            sequenceNumber = ourSeqNum + 1, // +1 for SYN
+            acknowledgmentNumber = ourAckNum,
+            createdAt = now,
+            lastActivityAt = now,
+            bytesSent = 0,
+            bytesReceived = 0,
+            readerJob = readerJob
+        )
+        
+        // Add to connection table
+        connectionTable.addTcpConnection(connection)
+        
+        logger.info(TAG, "TCP connection established: $key")
+        
+        // Send SYN-ACK back to TUN
+        sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
+    }
+    
+    /**
+     * Establishes a SOCKS5 connection to the destination.
+     * 
+     * @param key The connection key containing destination IP and port
+     * @return Connected socket or null if failed
+     */
+    private suspend fun establishSocks5Connection(key: ConnectionKey): Socket? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val socket = Socket()
+                socket.connect(
+                    InetSocketAddress("127.0.0.1", socksPort),
+                    SOCKS5_CONNECT_TIMEOUT_MS
+                )
+                socket.soTimeout = 30000 // 30 second read timeout
+                
+                // Perform SOCKS5 handshake
+                if (performSocks5Handshake(socket, key.destIp, key.destPort)) {
+                    socket
+                } else {
+                    socket.close()
+                    null
+                }
+            } catch (e: Exception) {
+                logger.error(TAG, "Failed to establish SOCKS5 connection: ${e.message}", e)
+                null
+            }
+        }
+    }
+    
+    /**
+     * Starts a coroutine to read data from the SOCKS5 socket and forward to TUN.
+     * 
+     * This coroutine runs for the lifetime of the connection, reading data from
+     * the SOCKS5 proxy and constructing TCP packets to send back through the TUN interface.
+     * 
+     * @param key The connection key
+     * @param socket The SOCKS5 socket
+     * @param tunOutputStream Output stream to write response packets
+     * @param initialSeqNum Initial sequence number for this connection
+     * @param initialAckNum Initial acknowledgment number for this connection
+     * @return Job for the reader coroutine
+     */
+    private fun startConnectionReader(
+        key: ConnectionKey,
+        socket: Socket,
+        tunOutputStream: FileOutputStream,
+        initialSeqNum: Long,
+        initialAckNum: Long
+    ): Job {
+        return handlerScope.launch {
+            var seqNum = initialSeqNum + 1 // +1 for SYN
+            val ackNum = initialAckNum
+            
+            try {
+                val inputStream = socket.getInputStream()
+                val buffer = ByteArray(8192)
+                
+                while (true) {
+                    val bytesRead = withContext(Dispatchers.IO) {
+                        inputStream.read(buffer)
+                    }
+                    
+                    if (bytesRead <= 0) {
+                        logger.verbose(TAG, "Connection closed by remote: $key")
+                        break
+                    }
+                    
+                    val data = buffer.copyOf(bytesRead)
+                    
+                    // Send data packet to TUN
+                    sendTcpDataPacket(
+                        tunOutputStream,
+                        key,
+                        seqNum,
+                        ackNum,
+                        data
+                    )
+                    
+                    // Update sequence number
+                    seqNum = (seqNum + bytesRead) and 0xFFFFFFFF
+                    
+                    // Update connection statistics
+                    connectionTable.getTcpConnection(key)?.let { conn ->
+                        val updated = conn.copy(
+                            sequenceNumber = seqNum,
+                            lastActivityAt = System.currentTimeMillis(),
+                            bytesReceived = conn.bytesReceived + bytesRead
+                        )
+                        connectionTable.addTcpConnection(updated)
+                    }
+                }
+            } catch (e: IOException) {
+                logger.verbose(TAG, "Connection reader error for $key: ${e.message}")
+            } finally {
+                // Clean up connection
+                connectionTable.removeTcpConnection(key)
+                try {
+                    socket.close()
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                logger.debug(TAG, "Connection reader stopped for $key")
+            }
+        }
+    }
+    
+    /**
+     * Sends a TCP SYN-ACK packet to the TUN interface.
+     * 
+     * @param tunOutputStream Output stream to write the packet
+     * @param key The connection key
+     * @param seqNum Our sequence number
+     * @param ackNum Our acknowledgment number
+     */
+    private suspend fun sendTcpSynAck(
+        tunOutputStream: FileOutputStream,
+        key: ConnectionKey,
+        seqNum: Long,
+        ackNum: Long
+    ) {
+        val packet = packetBuilder.buildTcpPacket(
+            sourceIp = key.destIp,
+            sourcePort = key.destPort,
+            destIp = key.sourceIp,
+            destPort = key.sourcePort,
+            sequenceNumber = seqNum,
+            acknowledgmentNumber = ackNum,
+            flags = TcpFlags(
+                fin = false,
+                syn = true,
+                rst = false,
+                psh = false,
+                ack = true,
+                urg = false
+            ),
+            windowSize = 65535,
+            payload = byteArrayOf()
+        )
+        
+        withContext(Dispatchers.IO) {
+            tunOutputStream.write(packet)
+            tunOutputStream.flush()
+        }
+        
+        logger.verbose(TAG, "Sent SYN-ACK: $key seq=$seqNum ack=$ackNum")
+    }
+    
+    /**
+     * Sends a TCP data packet to the TUN interface.
+     * 
+     * @param tunOutputStream Output stream to write the packet
+     * @param key The connection key
+     * @param seqNum Our sequence number
+     * @param ackNum Our acknowledgment number
+     * @param data The payload data
+     */
+    private suspend fun sendTcpDataPacket(
+        tunOutputStream: FileOutputStream,
+        key: ConnectionKey,
+        seqNum: Long,
+        ackNum: Long,
+        data: ByteArray
+    ) {
+        val packet = packetBuilder.buildTcpPacket(
+            sourceIp = key.destIp,
+            sourcePort = key.destPort,
+            destIp = key.sourceIp,
+            destPort = key.sourcePort,
+            sequenceNumber = seqNum,
+            acknowledgmentNumber = ackNum,
+            flags = TcpFlags(
+                fin = false,
+                syn = false,
+                rst = false,
+                psh = true,
+                ack = true,
+                urg = false
+            ),
+            windowSize = 65535,
+            payload = data
+        )
+        
+        withContext(Dispatchers.IO) {
+            tunOutputStream.write(packet)
+            tunOutputStream.flush()
+        }
+        
+        logger.verbose(TAG, "Sent data packet: $key seq=$seqNum ack=$ackNum len=${data.size}")
+    }
+    
+    /**
+     * Sends a TCP RST packet to the TUN interface.
+     * 
+     * @param tunOutputStream Output stream to write the packet
+     * @param key The connection key
+     */
+    private suspend fun sendTcpRst(
+        tunOutputStream: FileOutputStream,
+        key: ConnectionKey
+    ) {
+        val packet = packetBuilder.buildTcpPacket(
+            sourceIp = key.destIp,
+            sourcePort = key.destPort,
+            destIp = key.sourceIp,
+            destPort = key.sourcePort,
+            sequenceNumber = 0,
+            acknowledgmentNumber = 0,
+            flags = TcpFlags(
+                fin = false,
+                syn = false,
+                rst = true,
+                psh = false,
+                ack = false,
+                urg = false
+            ),
+            windowSize = 0,
+            payload = byteArrayOf()
+        )
+        
+        withContext(Dispatchers.IO) {
+            tunOutputStream.write(packet)
+            tunOutputStream.flush()
+        }
+        
+        logger.verbose(TAG, "Sent RST: $key")
     }
     
     /**

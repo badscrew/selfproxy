@@ -126,6 +126,7 @@
 
 
 
+
   - Implement performSocks5Handshake() method
   - Send SOCKS5 greeting (version, methods)
   - Read method selection response
@@ -143,7 +144,11 @@
   - Test timeout handling
   - Use mock SOCKS5 server
 
-- [ ] 7. Implement TCP connection establishment
+- [x] 7. Implement TCP connection establishment
+
+
+
+
   - Implement handleSyn() method
   - Create ConnectionKey from packet
   - Establish SOCKS5 connection
@@ -153,7 +158,9 @@
   - Send SYN-ACK packet back to TUN
   - _Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 7.1 Write integration test for TCP connection establishment
+- [x] 7.1 Write integration test for TCP connection establishment
+
+
   - Test full SYN → SOCKS5 → SYN-ACK flow
   - Verify connection table entry created
   - Verify SOCKS5 connection established

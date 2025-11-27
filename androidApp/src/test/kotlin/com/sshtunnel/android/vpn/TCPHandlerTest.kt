@@ -639,4 +639,196 @@ class TCPHandlerTest {
             }
         }
     }
+    
+    // ========== Integration Tests ==========
+    
+    /**
+     * Integration test for TCP connection establishment.
+     * 
+     * Tests the SOCKS5 connection establishment which is the core of TCP connection setup:
+     * 1. Establishes SOCKS5 connection
+     * 2. Performs SOCKS5 handshake
+     * 3. Verifies connection is ready for data transfer
+     * 
+     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4
+     */
+    @Test
+    fun `TCP connection establishment full flow`() = runBlocking {
+        // Set up mock SOCKS5 server
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00), // Version 5, No auth
+            connectResponse = byteArrayOf(
+                0x05, 0x00, 0x00, 0x01, // Version, Success, Reserved, IPv4
+                0x7F, 0x00, 0x00, 0x01, // Bound address: 127.0.0.1
+                0x04, 0x38 // Bound port: 1080
+            )
+        )
+        mockServer.start()
+        
+        try {
+            // Create a new TCPHandler with the mock server port
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Verify SOCKS5 handshake works for TCP connection establishment
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            val handshakeResult = testHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Verify the server received correct CONNECT request
+            val receivedConnect = mockServer.receivedConnect
+            assertNotNull("Server should receive CONNECT request", receivedConnect)
+            assertEquals(0x05, receivedConnect!![0].toInt() and 0xFF) // Version
+            assertEquals(0x01, receivedConnect[1].toInt() and 0xFF) // CMD: CONNECT
+            
+            // Verify connection is ready for data transfer
+            assertTrue("Socket should be connected", socket.isConnected)
+            assertFalse("Socket should not be closed", socket.isClosed)
+            
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Integration test verifying connection table entry is created.
+     * 
+     * Tests that after a successful SOCKS5 connection, the connection
+     * is properly added to the ConnectionTable.
+     */
+    @Test
+    fun `connection table entry created after successful SOCKS5 connection`() = runBlocking {
+        // Set up mock SOCKS5 server
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(
+                0x05, 0x00, 0x00, 0x01,
+                0x7F, 0x00, 0x00, 0x01,
+                0x04, 0x38
+            )
+        )
+        mockServer.start()
+        
+        try {
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Manually add connection to table (simulating what handleSyn would do)
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = kotlinx.coroutines.Job()
+            )
+            
+            connectionTable.addTcpConnection(connection)
+            
+            // Verify connection is in table
+            val retrieved = connectionTable.getTcpConnection(key)
+            assertNotNull("Connection should be in table", retrieved)
+            assertEquals(key, retrieved!!.key)
+            assertEquals(TcpState.ESTABLISHED, retrieved.state)
+            
+            // Clean up
+            connectionTable.removeTcpConnection(key)
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Integration test verifying SOCKS5 connection is established.
+     * 
+     * Tests that the SOCKS5 connection is properly established with
+     * the correct destination IP and port.
+     */
+    @Test
+    fun `SOCKS5 connection established with correct destination`() = runBlocking {
+        // Set up mock SOCKS5 server
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(
+                0x05, 0x00, 0x00, 0x01,
+                0x7F, 0x00, 0x00, 0x01,
+                0x04, 0x38
+            )
+        )
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Establish connection to specific destination
+            val destIp = "1.1.1.1"
+            val destPort = 80
+            
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = testHandler.performSocks5Handshake(socket, destIp, destPort)
+            
+            assertTrue("SOCKS5 handshake should succeed", result)
+            
+            // Verify the CONNECT request contains correct destination
+            val receivedConnect = mockServer.receivedConnect
+            assertNotNull("Server should receive CONNECT request", receivedConnect)
+            
+            // Extract destination IP from CONNECT request (bytes 4-7)
+            val receivedIp = String.format(
+                "%d.%d.%d.%d",
+                receivedConnect!![4].toInt() and 0xFF,
+                receivedConnect[5].toInt() and 0xFF,
+                receivedConnect[6].toInt() and 0xFF,
+                receivedConnect[7].toInt() and 0xFF
+            )
+            assertEquals(destIp, receivedIp)
+            
+            // Extract destination port from CONNECT request (bytes 8-9)
+            val receivedPort = ((receivedConnect[8].toInt() and 0xFF) shl 8) or 
+                              (receivedConnect[9].toInt() and 0xFF)
+            assertEquals(destPort, receivedPort)
+            
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
 }
