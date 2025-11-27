@@ -2,7 +2,11 @@
 
 ## Phase 1: Core Infrastructure
 
-- [ ] 1. Create packet parsing utilities
+- [x] 1. Create packet parsing utilities
+
+
+
+
   - Create IPPacketParser object in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement parseIPv4Header() method
   - Implement extractProtocol(), extractSourceIP(), extractDestIP() methods
@@ -11,7 +15,9 @@
   - Add IPv4Header data class
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 1.1 Write unit tests for IP packet parsing
+- [x] 1.1 Write unit tests for IP packet parsing
+
+
   - Test valid IPv4 header parsing
   - Test invalid IP version rejection
   - Test protocol extraction
