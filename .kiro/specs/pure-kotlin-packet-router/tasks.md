@@ -7,6 +7,7 @@
 
 
 
+
   - Create IPPacketParser object in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement parseIPv4Header() method
   - Implement extractProtocol(), extractSourceIP(), extractDestIP() methods
@@ -24,7 +25,10 @@
   - Test IP address extraction
   - Test checksum validation
 
-- [ ] 2. Create packet builder utilities
+- [x] 2. Create packet builder utilities
+
+
+
   - Create PacketBuilder class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement buildIPv4Packet() method
   - Implement buildTcpPacket() method
@@ -34,14 +38,18 @@
   - Implement calculateUdpChecksum() method
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 2.1 Write unit tests for packet building
+- [x] 2.1 Write unit tests for packet building
+
+
   - Test IP packet construction
   - Test TCP packet construction with correct checksum
   - Test UDP packet construction
   - Test checksum calculation accuracy
   - Test odd-length data handling in checksum
 
-- [ ] 2.2 Write property tests for packet operations
+- [x] 2.2 Write property tests for packet operations
+
+
   - **Property: Checksum calculation is symmetric**
   - **Property: IP packet round-trip preserves data**
   - Test with various packet sizes and content
