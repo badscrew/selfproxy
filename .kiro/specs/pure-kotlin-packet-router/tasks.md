@@ -29,6 +29,7 @@
 
 
 
+
   - Create PacketBuilder class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement buildIPv4Packet() method
   - Implement buildTcpPacket() method
@@ -54,7 +55,10 @@
   - **Property: IP packet round-trip preserves data**
   - Test with various packet sizes and content
 
-- [ ] 3. Create connection management data structures
+- [x] 3. Create connection management data structures
+
+
+
   - Create ConnectionKey data class with Protocol enum
   - Create TcpConnection data class with TcpState enum
   - Create UdpConnection data class
