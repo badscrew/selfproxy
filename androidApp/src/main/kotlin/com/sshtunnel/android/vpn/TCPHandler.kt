@@ -92,8 +92,13 @@ class TCPHandler(
             }
             else -> {
                 // Data or ACK packet
-                // TODO: Implement in task 8
-                logger.verbose(TAG, "Data/ACK packet received for $key")
+                val payload = extractTcpPayload(packet, ipHeader.headerLength, tcpHeader)
+                if (payload.isNotEmpty()) {
+                    handleData(key, tcpHeader, payload)
+                } else {
+                    // Pure ACK packet, no data to forward
+                    logger.verbose(TAG, "ACK packet received for $key")
+                }
             }
         }
     }
@@ -391,6 +396,74 @@ class TCPHandler(
         
         // Send SYN-ACK back to TUN
         sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
+    }
+    
+    /**
+     * Handles TCP data packets by forwarding payload to SOCKS5.
+     * 
+     * This method:
+     * 1. Extracts TCP payload from the packet
+     * 2. Looks up the connection in ConnectionTable
+     * 3. Writes payload to SOCKS5 socket
+     * 4. Updates sequence numbers
+     * 5. Updates statistics (bytes sent)
+     * 
+     * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 13.1
+     * 
+     * @param key The connection key (5-tuple)
+     * @param tcpHeader The parsed TCP header
+     * @param payload The TCP payload data
+     */
+    private suspend fun handleData(
+        key: ConnectionKey,
+        tcpHeader: TcpHeader,
+        payload: ByteArray
+    ) {
+        // Look up connection in ConnectionTable
+        val connection = connectionTable.getTcpConnection(key)
+        if (connection == null) {
+            logger.verbose(TAG, "Received data for unknown connection: $key, dropping")
+            return
+        }
+        
+        if (connection.state != TcpState.ESTABLISHED) {
+            logger.verbose(TAG, "Received data for non-established connection: $key (state=${connection.state}), dropping")
+            return
+        }
+        
+        logger.verbose(TAG, "Forwarding ${payload.size} bytes from TUN to SOCKS5: $key")
+        
+        try {
+            // Write payload to SOCKS5 socket
+            withContext(Dispatchers.IO) {
+                connection.socksSocket.getOutputStream().write(payload)
+                connection.socksSocket.getOutputStream().flush()
+            }
+            
+            // Update acknowledgment number (acknowledge their data)
+            val newAckNum = (tcpHeader.sequenceNumber + payload.size) and 0xFFFFFFFF
+            
+            // Update connection with new acknowledgment number and statistics
+            val updatedConnection = connection.copy(
+                acknowledgmentNumber = newAckNum,
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = connection.bytesSent + payload.size
+            )
+            connectionTable.addTcpConnection(updatedConnection)
+            
+            logger.verbose(TAG, "Data forwarded successfully: $key, ack=$newAckNum")
+            
+        } catch (e: IOException) {
+            logger.error(TAG, "Failed to forward data to SOCKS5 for $key: ${e.message}", e)
+            // Connection is broken, remove it
+            connectionTable.removeTcpConnection(key)
+            try {
+                connection.readerJob.cancel()
+                connection.socksSocket.close()
+            } catch (ex: Exception) {
+                // Ignore cleanup errors
+            }
+        }
     }
     
     /**

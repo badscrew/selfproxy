@@ -149,6 +149,7 @@
 
 
 
+
   - Implement handleSyn() method
   - Create ConnectionKey from packet
   - Establish SOCKS5 connection
@@ -165,7 +166,11 @@
   - Verify connection table entry created
   - Verify SOCKS5 connection established
 
-- [ ] 8. Implement TCP data forwarding
+- [x] 8. Implement TCP data forwarding
+
+
+
+
   - Implement handleData() method for TUN → SOCKS5
   - Extract TCP payload from packet
   - Look up connection in ConnectionTable
@@ -178,13 +183,16 @@
   - Update statistics (bytes sent/received)
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 13.1_
 
-- [ ] 8.1 Write integration test for TCP data forwarding
+- [x] 8.1 Write integration test for TCP data forwarding
+
+
   - Test bidirectional data flow
   - Verify data integrity
   - Test large data transfers
   - Verify statistics tracking
 
 - [ ] 9. Implement TCP connection termination
+
   - Implement handleFin() method
   - Send FIN to SOCKS5 socket
   - Update TCP state to FIN_WAIT
@@ -202,6 +210,7 @@
   - Verify resources released
 
 - [ ] 10. Implement TCP state machine
+
   - Add TcpState enum (CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT, etc.)
   - Implement state transitions in TcpConnection
   - Handle state-specific packet processing

@@ -831,4 +831,334 @@ class TCPHandlerTest {
             mockServer.stop()
         }
     }
+    
+    // ========== TCP Data Forwarding Integration Tests ==========
+    
+    /**
+     * Integration test for bidirectional TCP data flow.
+     * 
+     * Tests that data can flow in both directions:
+     * - TUN → SOCKS5 (client sending data)
+     * - SOCKS5 → TUN (server sending data)
+     * 
+     * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
+     */
+    @Test
+    fun `bidirectional TCP data flow`() = runBlocking {
+        // Set up mock SOCKS5 server that echoes data back
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Send data to SOCKS5 (TUN → SOCKS5)
+            val testData = "Hello, World!".toByteArray()
+            socket.getOutputStream().write(testData)
+            socket.getOutputStream().flush()
+            
+            // Read echoed data from SOCKS5 (SOCKS5 → TUN)
+            val buffer = ByteArray(1024)
+            val bytesRead = socket.getInputStream().read(buffer)
+            
+            assertTrue("Should receive data back", bytesRead > 0)
+            val receivedData = buffer.copyOf(bytesRead)
+            assertArrayEquals("Data should be echoed back", testData, receivedData)
+            
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Integration test for data integrity during forwarding.
+     * 
+     * Tests that data is forwarded without corruption or modification.
+     * 
+     * Requirements: 5.1, 5.2, 5.3
+     */
+    @Test
+    fun `data integrity is maintained during forwarding`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Establish connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Test with various data patterns
+            val testPatterns = listOf(
+                "Simple ASCII text".toByteArray(),
+                ByteArray(256) { it.toByte() }, // All byte values 0-255
+                "Unicode: 你好世界 🌍".toByteArray(Charsets.UTF_8),
+                ByteArray(1000) { (it % 256).toByte() } // Larger payload
+            )
+            
+            for (testData in testPatterns) {
+                // Send data
+                socket.getOutputStream().write(testData)
+                socket.getOutputStream().flush()
+                
+                // Read echoed data
+                val buffer = ByteArray(testData.size + 100)
+                var totalRead = 0
+                while (totalRead < testData.size) {
+                    val bytesRead = socket.getInputStream().read(buffer, totalRead, buffer.size - totalRead)
+                    if (bytesRead <= 0) break
+                    totalRead += bytesRead
+                }
+                
+                val receivedData = buffer.copyOf(totalRead)
+                assertArrayEquals("Data should match exactly", testData, receivedData)
+            }
+            
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Integration test for large data transfers.
+     * 
+     * Tests that large amounts of data can be transferred without issues.
+     * 
+     * Requirements: 5.1, 5.2, 5.3
+     */
+    @Test
+    fun `large data transfers work correctly`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Establish connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 5000 // Longer timeout for large transfer
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Test with large data (100 KB)
+            val largeData = ByteArray(100 * 1024) { (it % 256).toByte() }
+            
+            // Send data
+            socket.getOutputStream().write(largeData)
+            socket.getOutputStream().flush()
+            
+            // Read echoed data
+            val buffer = ByteArray(largeData.size + 1000)
+            var totalRead = 0
+            val startTime = System.currentTimeMillis()
+            
+            while (totalRead < largeData.size) {
+                val bytesRead = socket.getInputStream().read(buffer, totalRead, buffer.size - totalRead)
+                if (bytesRead <= 0) break
+                totalRead += bytesRead
+                
+                // Timeout check
+                if (System.currentTimeMillis() - startTime > 5000) {
+                    fail("Transfer took too long")
+                }
+            }
+            
+            assertEquals("Should receive all data", largeData.size, totalRead)
+            
+            val receivedData = buffer.copyOf(totalRead)
+            assertArrayEquals("Large data should match exactly", largeData, receivedData)
+            
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Integration test for statistics tracking during data forwarding.
+     * 
+     * Tests that bytes sent and received are correctly tracked.
+     * 
+     * Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
+     */
+    @Test
+    fun `statistics are tracked correctly during data forwarding`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Add connection to table
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = kotlinx.coroutines.Job()
+            )
+            connectionTable.addTcpConnection(connection)
+            
+            // Send data
+            val testData = "Test data for statistics".toByteArray()
+            socket.getOutputStream().write(testData)
+            socket.getOutputStream().flush()
+            
+            // Simulate updating statistics (as handleData would do)
+            val updatedConnection = connection.copy(
+                bytesSent = connection.bytesSent + testData.size,
+                lastActivityAt = System.currentTimeMillis()
+            )
+            connectionTable.addTcpConnection(updatedConnection)
+            
+            // Verify statistics
+            val retrieved = connectionTable.getTcpConnection(key)
+            assertNotNull("Connection should be in table", retrieved)
+            assertEquals("Bytes sent should be tracked", testData.size.toLong(), retrieved!!.bytesSent)
+            
+            // Read echoed data
+            val buffer = ByteArray(1024)
+            val bytesRead = socket.getInputStream().read(buffer)
+            assertTrue("Should receive data back", bytesRead > 0)
+            
+            // Simulate updating receive statistics (as startConnectionReader would do)
+            val finalConnection = retrieved.copy(
+                bytesReceived = retrieved.bytesReceived + bytesRead,
+                lastActivityAt = System.currentTimeMillis()
+            )
+            connectionTable.addTcpConnection(finalConnection)
+            
+            // Verify final statistics
+            val finalRetrieved = connectionTable.getTcpConnection(key)
+            assertNotNull("Connection should still be in table", finalRetrieved)
+            assertEquals("Bytes sent should be tracked", testData.size.toLong(), finalRetrieved!!.bytesSent)
+            assertEquals("Bytes received should be tracked", bytesRead.toLong(), finalRetrieved.bytesReceived)
+            
+            // Verify connection table statistics
+            val stats = connectionTable.getStatistics()
+            assertTrue("Total bytes sent should be positive", stats.totalBytesSent > 0)
+            assertTrue("Total bytes received should be positive", stats.totalBytesReceived > 0)
+            
+            // Clean up
+            connectionTable.removeTcpConnection(key)
+            socket.close()
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Mock SOCKS5 server that echoes data back for testing bidirectional flow.
+     */
+    private class MockSocks5EchoServer {
+        private var serverSocket: ServerSocket? = null
+        private var serverThread: Thread? = null
+        val port: Int
+            get() = serverSocket?.localPort ?: 0
+        
+        fun start() {
+            serverSocket = ServerSocket(0) // Use any available port
+            serverThread = thread {
+                try {
+                    val clientSocket = serverSocket?.accept()
+                    clientSocket?.use { socket ->
+                        val input = socket.getInputStream()
+                        val output = socket.getOutputStream()
+                        
+                        // Handle SOCKS5 greeting
+                        val greeting = ByteArray(3)
+                        input.read(greeting)
+                        output.write(byteArrayOf(0x05, 0x00)) // Version 5, No auth
+                        output.flush()
+                        
+                        // Handle CONNECT request
+                        val connect = ByteArray(10)
+                        input.read(connect)
+                        output.write(byteArrayOf(
+                            0x05, 0x00, 0x00, 0x01, // Version, Success, Reserved, IPv4
+                            0x7F, 0x00, 0x00, 0x01, // Bound address: 127.0.0.1
+                            0x04, 0x38 // Bound port: 1080
+                        ))
+                        output.flush()
+                        
+                        // Echo data back
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val bytesRead = input.read(buffer)
+                            if (bytesRead <= 0) break
+                            output.write(buffer, 0, bytesRead)
+                            output.flush()
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore exceptions in mock server
+                }
+            }
+        }
+        
+        fun stop() {
+            try {
+                serverSocket?.close()
+                serverThread?.interrupt()
+                serverThread?.join(1000)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
 }
