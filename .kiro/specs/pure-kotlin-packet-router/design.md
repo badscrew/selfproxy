@@ -105,11 +105,7 @@ data class ConnectionKey(
     val sourcePort: Int,
     val destIp: String,
     val destPort: Int
-) {
-    enum class Protocol {
-        TCP, UDP
-    }
-}
+)
 ```
 
 ### TCP Connection State
@@ -474,6 +470,9 @@ data class ConnectionStatistics(
     val totalBytesSent: Long,
     val totalBytesReceived: Long
 )
+
+// RouterStatistics is an alias for ConnectionStatistics
+typealias RouterStatistics = ConnectionStatistics
 ```
 
 ## Detailed Workflows
@@ -1069,7 +1068,7 @@ class PacketRouterPropertiesTest {
         ) { sourceIp, sourcePort, destIp, destPort ->
             val connectionTable = ConnectionTable()
             val key = ConnectionKey(
-                protocol = ConnectionKey.Protocol.TCP,
+                protocol = Protocol.TCP,
                 sourceIp = sourceIp,
                 sourcePort = sourcePort,
                 destIp = destIp,

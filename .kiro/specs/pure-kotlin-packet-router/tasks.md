@@ -3,7 +3,7 @@
 ## Phase 1: Core Infrastructure
 
 - [ ] 1. Create packet parsing utilities
-  - Create IPPacketParser object in shared/src/androidMain/kotlin/com/sshtunnel/android/vpn/packet/
+  - Create IPPacketParser object in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement parseIPv4Header() method
   - Implement extractProtocol(), extractSourceIP(), extractDestIP() methods
   - Implement getHeaderLength() and validateChecksum() methods
@@ -19,7 +19,7 @@
   - Test checksum validation
 
 - [ ] 2. Create packet builder utilities
-  - Create PacketBuilder class in shared/src/androidMain/kotlin/com/sshtunnel/android/vpn/packet/
+  - Create PacketBuilder class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/packet/
   - Implement buildIPv4Packet() method
   - Implement buildTcpPacket() method
   - Implement buildUdpPacket() method
@@ -50,7 +50,7 @@
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
 - [ ] 4. Implement ConnectionTable
-  - Create ConnectionTable class in shared/src/androidMain/kotlin/com/sshtunnel/android/vpn/
+  - Create ConnectionTable class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement addTcpConnection(), getTcpConnection(), removeTcpConnection()
   - Implement addUdpConnection(), getUdpConnection(), removeUdpConnection()
   - Implement cleanupIdleConnections() with configurable timeout
@@ -73,7 +73,7 @@
 ## Phase 2: TCP Handler Implementation
 
 - [ ] 5. Implement TCP packet parsing
-  - Create TCPHandler class in shared/src/androidMain/kotlin/com/sshtunnel/android/vpn/
+  - Create TCPHandler class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement parseTcpHeader() method
   - Extract source port, dest port, sequence number, ack number
   - Parse TCP flags (SYN, ACK, FIN, RST, PSH, URG)
@@ -168,7 +168,7 @@
 ## Phase 3: UDP Handler Implementation
 
 - [ ] 11. Implement UDP packet parsing
-  - Create UDPHandler class in shared/src/androidMain/kotlin/com/sshtunnel/android/vpn/
+  - Create UDPHandler class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement parseUdpHeader() method
   - Extract source port, dest port, length, checksum
   - Extract UDP payload
@@ -219,6 +219,18 @@
   - Update to use ConnectionTable for connection management
   - Remove old stub implementations
   - _Requirements: 1.1, 1.2, 1.3, 1.5_
+
+- [ ] 14.1 Update TunnelVpnService integration
+  - Verify TunnelVpnService correctly instantiates refactored PacketRouter
+  - Ensure FileInputStream/FileOutputStream are passed correctly
+  - Update any service-level error handling
+  - Test VPN service lifecycle with new router
+
+- [ ] 14.2 Remove old PacketRouter stub code
+  - Delete old packet routing logic from PacketRouter.kt
+  - Remove unused helper methods
+  - Clean up any temporary workarounds
+  - Verify no references to old implementation remain
 
 - [ ] 15. Implement packet routing main loop
   - Implement routePackets() method with coroutine

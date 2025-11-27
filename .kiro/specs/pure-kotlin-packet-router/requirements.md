@@ -132,7 +132,7 @@ Unlike native solutions (like tun2socks), this implementation is written entirel
 4. WHEN the router stops, THE Packet_Router SHALL close all active connections and clear Connection_Table
 5. WHEN a connection is idle for more than 120 seconds, THE Packet_Router SHALL automatically close it
 
-### Requirement 10
+### Requirement 10 (Optional - Post-MVP)
 
 **User Story:** As the packet router, I want to handle packet fragmentation, so that large packets are properly processed.
 
@@ -143,6 +143,8 @@ Unlike native solutions (like tun2socks), this implementation is written entirel
 3. WHEN receiving fragmented packets from TUN, THE Packet_Router SHALL reassemble them before forwarding
 4. WHEN fragment reassembly times out (>30 seconds), THE Packet_Router SHALL discard incomplete fragments
 5. WHEN MTU is configured, THE Packet_Router SHALL respect the MTU value (default 1500 bytes)
+
+**Note:** Most packets fit within standard MTU (1500 bytes), so fragmentation is rarely needed in practice. This can be implemented post-MVP if needed.
 
 ### Requirement 11
 
