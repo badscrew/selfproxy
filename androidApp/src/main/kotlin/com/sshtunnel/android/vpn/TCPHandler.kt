@@ -81,14 +81,12 @@ class TCPHandler(
                 handleSyn(key, tcpHeader, tunOutputStream)
             }
             tcpHeader.flags.rst -> {
-                // RST packet - close connection
-                // TODO: Implement in task 9
-                logger.verbose(TAG, "RST packet received for $key")
+                // RST packet - close connection immediately
+                handleRst(key, tunOutputStream)
             }
             tcpHeader.flags.fin -> {
-                // FIN packet - close connection
-                // TODO: Implement in task 9
-                logger.verbose(TAG, "FIN packet received for $key")
+                // FIN packet - graceful connection close
+                handleFin(key, tcpHeader, tunOutputStream)
             }
             else -> {
                 // Data or ACK packet
@@ -467,6 +465,123 @@ class TCPHandler(
     }
     
     /**
+     * Handles a TCP FIN packet for graceful connection termination.
+     * 
+     * This method:
+     * 1. Looks up the connection in ConnectionTable
+     * 2. Sends FIN to SOCKS5 socket (half-close)
+     * 3. Updates TCP state to FIN_WAIT_1
+     * 4. Sends FIN-ACK back to TUN
+     * 5. Removes connection from ConnectionTable
+     * 6. Cancels connection reader coroutine
+     * 
+     * Requirements: 3.3, 3.4, 9.2
+     * 
+     * @param key The connection key (5-tuple)
+     * @param tcpHeader The parsed TCP header from the FIN packet
+     * @param tunOutputStream Output stream to write response packets
+     */
+    private suspend fun handleFin(
+        key: ConnectionKey,
+        tcpHeader: TcpHeader,
+        tunOutputStream: FileOutputStream
+    ) {
+        logger.debug(TAG, "Handling FIN for connection: $key")
+        
+        // Look up connection in ConnectionTable
+        val connection = connectionTable.getTcpConnection(key)
+        if (connection == null) {
+            logger.verbose(TAG, "Received FIN for unknown connection: $key, ignoring")
+            return
+        }
+        
+        try {
+            // Send FIN to SOCKS5 socket (shutdown output, half-close)
+            withContext(Dispatchers.IO) {
+                try {
+                    connection.socksSocket.shutdownOutput()
+                    logger.verbose(TAG, "Sent FIN to SOCKS5 for $key")
+                } catch (e: Exception) {
+                    logger.verbose(TAG, "Failed to shutdown SOCKS5 output for $key: ${e.message}")
+                }
+            }
+            
+            // Update TCP state to FIN_WAIT_1
+            val updatedConnection = connection.copy(
+                state = TcpState.FIN_WAIT_1,
+                lastActivityAt = System.currentTimeMillis()
+            )
+            connectionTable.addTcpConnection(updatedConnection)
+            
+            // Calculate acknowledgment number (acknowledge their FIN)
+            val ackNum = (tcpHeader.sequenceNumber + 1) and 0xFFFFFFFF
+            
+            // Send FIN-ACK back to TUN
+            sendTcpFinAck(
+                tunOutputStream,
+                key,
+                connection.sequenceNumber,
+                ackNum
+            )
+            
+            logger.info(TAG, "Sent FIN-ACK for connection: $key")
+            
+        } finally {
+            // Clean up connection resources
+            connectionTable.removeTcpConnection(key)
+            
+            try {
+                connection.readerJob.cancel()
+                connection.socksSocket.close()
+            } catch (e: Exception) {
+                logger.verbose(TAG, "Error closing connection resources for $key: ${e.message}")
+            }
+            
+            logger.debug(TAG, "Connection closed gracefully: $key")
+        }
+    }
+    
+    /**
+     * Handles a TCP RST packet for immediate connection termination.
+     * 
+     * This method:
+     * 1. Looks up the connection in ConnectionTable
+     * 2. Closes SOCKS5 socket immediately
+     * 3. Removes connection from ConnectionTable
+     * 4. Cancels connection reader coroutine
+     * 
+     * No response packet is sent for RST (RST is not acknowledged).
+     * 
+     * Requirements: 3.4, 9.2
+     * 
+     * @param key The connection key (5-tuple)
+     * @param tunOutputStream Output stream (not used for RST, but kept for consistency)
+     */
+    private suspend fun handleRst(
+        key: ConnectionKey,
+        tunOutputStream: FileOutputStream
+    ) {
+        logger.debug(TAG, "Handling RST for connection: $key")
+        
+        // Look up connection in ConnectionTable
+        val connection = connectionTable.removeTcpConnection(key)
+        if (connection == null) {
+            logger.verbose(TAG, "Received RST for unknown connection: $key, ignoring")
+            return
+        }
+        
+        // Close SOCKS5 socket immediately
+        try {
+            connection.readerJob.cancel()
+            connection.socksSocket.close()
+        } catch (e: Exception) {
+            logger.verbose(TAG, "Error closing connection for RST $key: ${e.message}")
+        }
+        
+        logger.info(TAG, "Connection reset: $key")
+    }
+    
+    /**
      * Establishes a SOCKS5 connection to the destination.
      * 
      * @param key The connection key containing destination IP and port
@@ -692,6 +807,47 @@ class TCPHandler(
         }
         
         logger.verbose(TAG, "Sent RST: $key")
+    }
+    
+    /**
+     * Sends a TCP FIN-ACK packet to the TUN interface.
+     * 
+     * @param tunOutputStream Output stream to write the packet
+     * @param key The connection key
+     * @param seqNum Our sequence number
+     * @param ackNum Our acknowledgment number
+     */
+    private suspend fun sendTcpFinAck(
+        tunOutputStream: FileOutputStream,
+        key: ConnectionKey,
+        seqNum: Long,
+        ackNum: Long
+    ) {
+        val packet = packetBuilder.buildTcpPacket(
+            sourceIp = key.destIp,
+            sourcePort = key.destPort,
+            destIp = key.sourceIp,
+            destPort = key.sourcePort,
+            sequenceNumber = seqNum,
+            acknowledgmentNumber = ackNum,
+            flags = TcpFlags(
+                fin = true,
+                syn = false,
+                rst = false,
+                psh = false,
+                ack = true,
+                urg = false
+            ),
+            windowSize = 65535,
+            payload = byteArrayOf()
+        )
+        
+        withContext(Dispatchers.IO) {
+            tunOutputStream.write(packet)
+            tunOutputStream.flush()
+        }
+        
+        logger.verbose(TAG, "Sent FIN-ACK: $key seq=$seqNum ack=$ackNum")
     }
     
     /**

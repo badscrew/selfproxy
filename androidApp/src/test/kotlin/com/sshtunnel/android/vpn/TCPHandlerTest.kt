@@ -7,6 +7,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.FileOutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
@@ -1159,6 +1160,397 @@ class TCPHandlerTest {
             } catch (e: Exception) {
                 // Ignore
             }
+        }
+    }
+    
+    // ========== TCP Termination Tests ==========
+    
+    /**
+     * Test FIN packet handling.
+     * 
+     * Verifies that when a FIN packet is received:
+     * - Connection is removed from ConnectionTable
+     * - SOCKS5 socket is closed
+     * - Connection reader coroutine is cancelled
+     * 
+     * Requirements: 3.3, 3.4, 9.2
+     */
+    @Test
+    fun `FIN packet closes connection gracefully`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Add connection to table
+            val readerJob = kotlinx.coroutines.Job()
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = readerJob
+            )
+            connectionTable.addTcpConnection(connection)
+            
+            // Verify connection is in table
+            assertNotNull("Connection should be in table", connectionTable.getTcpConnection(key))
+            
+            // Create FIN packet
+            val finPacket = buildTcpPacket(
+                sourcePort = key.sourcePort,
+                destPort = key.destPort,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 2001,
+                flags = TcpFlags(syn = false, ack = true, fin = true, rst = false, psh = false, urg = false),
+                windowSize = 65535,
+                payload = ByteArray(0)
+            )
+            
+            // Create mock TUN output stream
+            val tunOutput = ByteArrayOutputStream()
+            val tunFileOutput = java.io.FileOutputStream(java.io.FileDescriptor())
+            
+            // Parse TCP header
+            val tcpHeader = testHandler.parseTcpHeader(finPacket, 20)
+            assertNotNull("TCP header should be parsed", tcpHeader)
+            
+            // Handle FIN packet (using reflection to access private method)
+            val handleFinMethod = TCPHandler::class.java.getDeclaredMethod(
+                "handleFin",
+                ConnectionKey::class.java,
+                TcpHeader::class.java,
+                FileOutputStream::class.java
+            )
+            handleFinMethod.isAccessible = true
+            handleFinMethod.invoke(testHandler, key, tcpHeader, tunFileOutput)
+            
+            // Wait a bit for async operations
+            kotlinx.coroutines.delay(100)
+            
+            // Verify connection is removed from table
+            assertNull("Connection should be removed from table", connectionTable.getTcpConnection(key))
+            
+            // Verify socket is closed
+            assertTrue("Socket should be closed", socket.isClosed)
+            
+            // Verify reader job is cancelled
+            assertTrue("Reader job should be cancelled", readerJob.isCancelled)
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Test RST packet handling.
+     * 
+     * Verifies that when a RST packet is received:
+     * - Connection is immediately removed from ConnectionTable
+     * - SOCKS5 socket is closed immediately
+     * - Connection reader coroutine is cancelled
+     * - No response packet is sent (RST is not acknowledged)
+     * 
+     * Requirements: 3.4, 9.2
+     */
+    @Test
+    fun `RST packet closes connection immediately`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Add connection to table
+            val readerJob = kotlinx.coroutines.Job()
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = readerJob
+            )
+            connectionTable.addTcpConnection(connection)
+            
+            // Verify connection is in table
+            assertNotNull("Connection should be in table", connectionTable.getTcpConnection(key))
+            
+            // Create RST packet
+            val rstPacket = buildTcpPacket(
+                sourcePort = key.sourcePort,
+                destPort = key.destPort,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 0,
+                flags = TcpFlags(syn = false, ack = false, fin = false, rst = true, psh = false, urg = false),
+                windowSize = 0,
+                payload = ByteArray(0)
+            )
+            
+            // Create mock TUN output stream
+            val tunFileOutput = java.io.FileOutputStream(java.io.FileDescriptor())
+            
+            // Parse TCP header
+            val tcpHeader = testHandler.parseTcpHeader(rstPacket, 20)
+            assertNotNull("TCP header should be parsed", tcpHeader)
+            
+            // Handle RST packet (using reflection to access private method)
+            val handleRstMethod = TCPHandler::class.java.getDeclaredMethod(
+                "handleRst",
+                ConnectionKey::class.java,
+                FileOutputStream::class.java
+            )
+            handleRstMethod.isAccessible = true
+            handleRstMethod.invoke(testHandler, key, tunFileOutput)
+            
+            // Wait a bit for async operations
+            kotlinx.coroutines.delay(100)
+            
+            // Verify connection is removed from table
+            assertNull("Connection should be removed from table", connectionTable.getTcpConnection(key))
+            
+            // Verify socket is closed
+            assertTrue("Socket should be closed", socket.isClosed)
+            
+            // Verify reader job is cancelled
+            assertTrue("Reader job should be cancelled", readerJob.isCancelled)
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Test connection cleanup after FIN.
+     * 
+     * Verifies that all resources are properly released after FIN handling.
+     * 
+     * Requirements: 9.2
+     */
+    @Test
+    fun `connection cleanup releases all resources after FIN`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Add connection to table
+            val readerJob = kotlinx.coroutines.Job()
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 100,
+                bytesReceived = 200,
+                readerJob = readerJob
+            )
+            connectionTable.addTcpConnection(connection)
+            
+            // Get initial statistics
+            val initialStats = connectionTable.getStatistics()
+            assertEquals("Should have 1 active connection", 1, initialStats.activeTcpConnections)
+            
+            // Create FIN packet
+            val finPacket = buildTcpPacket(
+                sourcePort = key.sourcePort,
+                destPort = key.destPort,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 2001,
+                flags = TcpFlags(syn = false, ack = true, fin = true, rst = false, psh = false, urg = false),
+                windowSize = 65535,
+                payload = ByteArray(0)
+            )
+            
+            // Create mock TUN output stream
+            val tunFileOutput = java.io.FileOutputStream(java.io.FileDescriptor())
+            
+            // Parse TCP header
+            val tcpHeader = testHandler.parseTcpHeader(finPacket, 20)
+            assertNotNull("TCP header should be parsed", tcpHeader)
+            
+            // Handle FIN packet
+            val handleFinMethod = TCPHandler::class.java.getDeclaredMethod(
+                "handleFin",
+                ConnectionKey::class.java,
+                TcpHeader::class.java,
+                FileOutputStream::class.java
+            )
+            handleFinMethod.isAccessible = true
+            handleFinMethod.invoke(testHandler, key, tcpHeader, tunFileOutput)
+            
+            // Wait for cleanup
+            kotlinx.coroutines.delay(100)
+            
+            // Verify all resources are released
+            assertNull("Connection should be removed", connectionTable.getTcpConnection(key))
+            assertTrue("Socket should be closed", socket.isClosed)
+            assertTrue("Reader job should be cancelled", readerJob.isCancelled)
+            
+            // Verify statistics updated
+            val finalStats = connectionTable.getStatistics()
+            assertEquals("Should have 0 active connections", 0, finalStats.activeTcpConnections)
+            
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    /**
+     * Test connection cleanup after RST.
+     * 
+     * Verifies that all resources are properly released after RST handling.
+     * 
+     * Requirements: 9.2
+     */
+    @Test
+    fun `connection cleanup releases all resources after RST`() = runBlocking {
+        val mockServer = MockSocks5EchoServer()
+        mockServer.start()
+        
+        try {
+            val testHandler = TCPHandler(
+                socksPort = mockServer.port,
+                connectionTable = connectionTable,
+                logger = logger
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = "10.0.0.2",
+                sourcePort = 12345,
+                destIp = "1.1.1.1",
+                destPort = 80
+            )
+            
+            // Establish SOCKS5 connection
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 2000
+            
+            val handshakeResult = testHandler.performSocks5Handshake(socket, key.destIp, key.destPort)
+            assertTrue("SOCKS5 handshake should succeed", handshakeResult)
+            
+            // Add connection to table
+            val readerJob = kotlinx.coroutines.Job()
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = 1001,
+                acknowledgmentNumber = 1001,
+                createdAt = System.currentTimeMillis(),
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 100,
+                bytesReceived = 200,
+                readerJob = readerJob
+            )
+            connectionTable.addTcpConnection(connection)
+            
+            // Get initial statistics
+            val initialStats = connectionTable.getStatistics()
+            assertEquals("Should have 1 active connection", 1, initialStats.activeTcpConnections)
+            
+            // Create mock TUN output stream
+            val tunFileOutput = java.io.FileOutputStream(java.io.FileDescriptor())
+            
+            // Handle RST packet
+            val handleRstMethod = TCPHandler::class.java.getDeclaredMethod(
+                "handleRst",
+                ConnectionKey::class.java,
+                FileOutputStream::class.java
+            )
+            handleRstMethod.isAccessible = true
+            handleRstMethod.invoke(testHandler, key, tunFileOutput)
+            
+            // Wait for cleanup
+            kotlinx.coroutines.delay(100)
+            
+            // Verify all resources are released
+            assertNull("Connection should be removed", connectionTable.getTcpConnection(key))
+            assertTrue("Socket should be closed", socket.isClosed)
+            assertTrue("Reader job should be cancelled", readerJob.isCancelled)
+            
+            // Verify statistics updated
+            val finalStats = connectionTable.getStatistics()
+            assertEquals("Should have 0 active connections", 0, finalStats.activeTcpConnections)
+            
+        } finally {
+            mockServer.stop()
         }
     }
 }

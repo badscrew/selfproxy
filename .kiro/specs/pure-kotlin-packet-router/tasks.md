@@ -171,6 +171,7 @@
 
 
 
+
   - Implement handleData() method for TUN → SOCKS5
   - Extract TCP payload from packet
   - Look up connection in ConnectionTable
@@ -190,8 +191,11 @@
   - Verify data integrity
   - Test large data transfers
   - Verify statistics tracking
+-
 
-- [ ] 9. Implement TCP connection termination
+- [x] 9. Implement TCP connection termination
+
+
 
   - Implement handleFin() method
   - Send FIN to SOCKS5 socket
@@ -203,7 +207,9 @@
   - Cancel connection reader coroutine
   - _Requirements: 3.3, 3.4, 9.2_
 
-- [ ] 9.1 Write unit tests for TCP termination
+- [x] 9.1 Write unit tests for TCP termination
+
+
   - Test FIN handling
   - Test RST handling
   - Verify connection cleanup
