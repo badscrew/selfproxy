@@ -105,6 +105,7 @@
 
 
 
+
   - Create TCPHandler class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement parseTcpHeader() method
   - Extract source port, dest port, sequence number, ack number
@@ -120,7 +121,11 @@
   - Test payload extraction
   - Test various TCP packet types (SYN, ACK, FIN, RST)
 
-- [ ] 6. Implement SOCKS5 handshake for TCP
+- [x] 6. Implement SOCKS5 handshake for TCP
+
+
+
+
   - Implement performSocks5Handshake() method
   - Send SOCKS5 greeting (version, methods)
   - Read method selection response
@@ -129,7 +134,9 @@
   - Handle SOCKS5 errors with specific error codes
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 6.1 Write unit tests for SOCKS5 handshake
+- [x] 6.1 Write unit tests for SOCKS5 handshake
+
+
   - Test successful handshake
   - Test authentication failure
   - Test connection refused

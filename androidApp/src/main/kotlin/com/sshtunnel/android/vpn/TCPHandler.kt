@@ -2,7 +2,12 @@ package com.sshtunnel.android.vpn
 
 import com.sshtunnel.android.vpn.packet.IPv4Header
 import com.sshtunnel.logging.Logger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
+import java.net.InetAddress
+import java.net.Socket
+import java.nio.ByteBuffer
 
 /**
  * Handles TCP packet parsing and processing.
@@ -170,6 +175,112 @@ class TCPHandler(
         }
         
         return packet.copyOfRange(payloadStart, packet.size)
+    }
+    
+    /**
+     * Performs SOCKS5 handshake for a TCP connection.
+     * 
+     * SOCKS5 Protocol:
+     * 1. Client sends greeting: [VER(0x05), NMETHODS(0x01), METHODS(0x00 = no auth)]
+     * 2. Server responds: [VER(0x05), METHOD(0x00)]
+     * 3. Client sends CONNECT request: [VER, CMD(0x01), RSV(0x00), ATYP(0x01), DST.ADDR, DST.PORT]
+     * 4. Server responds: [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
+     *    REP values: 0x00 = success, 0x01 = general failure, 0x02 = not allowed,
+     *                0x03 = network unreachable, 0x04 = host unreachable, 0x05 = connection refused,
+     *                0x06 = TTL expired, 0x07 = command not supported, 0x08 = address type not supported
+     * 
+     * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
+     * 
+     * @param socket The socket connected to the SOCKS5 proxy
+     * @param destIp The destination IP address
+     * @param destPort The destination port
+     * @return true if handshake succeeded, false otherwise
+     */
+    suspend fun performSocks5Handshake(
+        socket: Socket,
+        destIp: String,
+        destPort: Int
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val output = socket.getOutputStream()
+            val input = socket.getInputStream()
+            
+            // 1. Send greeting: [VER, NMETHODS, METHODS]
+            logger.verbose(TAG, "SOCKS5: Sending greeting to proxy")
+            output.write(byteArrayOf(0x05, 0x01, 0x00)) // Version 5, 1 method, No auth
+            output.flush()
+            
+            // 2. Read method selection: [VER, METHOD]
+            val greeting = ByteArray(2)
+            val greetingRead = input.read(greeting)
+            if (greetingRead != 2) {
+                logger.error(TAG, "SOCKS5 greeting failed: expected 2 bytes, got $greetingRead")
+                return@withContext false
+            }
+            
+            if (greeting[0] != 0x05.toByte()) {
+                logger.error(TAG, "SOCKS5 greeting failed: invalid version ${greeting[0]}")
+                return@withContext false
+            }
+            
+            if (greeting[1] != 0x00.toByte()) {
+                logger.error(TAG, "SOCKS5 greeting failed: authentication required (method=${greeting[1]})")
+                return@withContext false
+            }
+            
+            logger.verbose(TAG, "SOCKS5: Greeting successful, sending CONNECT request")
+            
+            // 3. Send connect request: [VER, CMD, RSV, ATYP, DST.ADDR, DST.PORT]
+            val ipBytes = InetAddress.getByName(destIp).address
+            val portBytes = ByteBuffer.allocate(2).putShort(destPort.toShort()).array()
+            
+            val request = byteArrayOf(
+                0x05,  // Version
+                0x01,  // CMD: CONNECT
+                0x00,  // Reserved
+                0x01   // ATYP: IPv4
+            ) + ipBytes + portBytes
+            
+            output.write(request)
+            output.flush()
+            
+            // 4. Read response: [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
+            val response = ByteArray(10)
+            val responseRead = input.read(response)
+            
+            if (responseRead < 10) {
+                logger.error(TAG, "SOCKS5 connect failed: incomplete response (got $responseRead bytes)")
+                return@withContext false
+            }
+            
+            if (response[0] != 0x05.toByte()) {
+                logger.error(TAG, "SOCKS5 connect failed: invalid version ${response[0]}")
+                return@withContext false
+            }
+            
+            val replyCode = response[1].toInt() and 0xFF
+            if (replyCode != 0x00) {
+                val errorMessage = when (replyCode) {
+                    0x01 -> "general SOCKS server failure"
+                    0x02 -> "connection not allowed by ruleset"
+                    0x03 -> "network unreachable"
+                    0x04 -> "host unreachable"
+                    0x05 -> "connection refused"
+                    0x06 -> "TTL expired"
+                    0x07 -> "command not supported"
+                    0x08 -> "address type not supported"
+                    else -> "unknown error code $replyCode"
+                }
+                logger.error(TAG, "SOCKS5 connect failed: $errorMessage (code=0x${replyCode.toString(16)})")
+                return@withContext false
+            }
+            
+            logger.debug(TAG, "SOCKS5 handshake successful: $destIp:$destPort")
+            true
+        } catch (e: Exception) {
+            logger.error(TAG, "SOCKS5 handshake error: ${e.message}", e)
+            false
+        }
     }
     
     /**

@@ -1,10 +1,17 @@
 package com.sshtunnel.android.vpn
 
 import com.sshtunnel.logging.Logger
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
+import kotlin.concurrent.thread
 
 /**
  * Unit tests for TCPHandler TCP packet parsing.
@@ -305,6 +312,218 @@ class TCPHandlerTest {
         assertEquals(0x80000000L, tcpHeader.acknowledgmentNumber)
     }
     
+    // ========== SOCKS5 Handshake Tests ==========
+    
+    @Test
+    fun `successful SOCKS5 handshake`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00), // Version 5, No auth
+            connectResponse = byteArrayOf(
+                0x05, 0x00, 0x00, 0x01, // Version, Success, Reserved, IPv4
+                0x7F, 0x00, 0x00, 0x01, // Bound address: 127.0.0.1
+                0x04, 0x38 // Bound port: 1080
+            )
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertTrue("Handshake should succeed", result)
+            
+            // Verify the server received correct greeting
+            val receivedGreeting = mockServer.receivedGreeting
+            assertNotNull(receivedGreeting)
+            assertArrayEquals(byteArrayOf(0x05, 0x01, 0x00), receivedGreeting)
+            
+            // Verify the server received correct CONNECT request
+            val receivedConnect = mockServer.receivedConnect
+            assertNotNull(receivedConnect)
+            assertEquals(0x05, receivedConnect!![0].toInt() and 0xFF) // Version
+            assertEquals(0x01, receivedConnect[1].toInt() and 0xFF) // CMD: CONNECT
+            assertEquals(0x00, receivedConnect[2].toInt() and 0xFF) // Reserved
+            assertEquals(0x01, receivedConnect[3].toInt() and 0xFF) // ATYP: IPv4
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails with invalid version in greeting response`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x04, 0x00), // Wrong version (SOCKS4)
+            connectResponse = byteArrayOf()
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail with invalid version", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails when authentication is required`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x02), // Version 5, Username/password auth required
+            connectResponse = byteArrayOf()
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail when auth is required", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails with connection refused error`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(
+                0x05, 0x05, 0x00, 0x01, // Version, Connection refused (0x05), Reserved, IPv4
+                0x00, 0x00, 0x00, 0x00, // Bound address: 0.0.0.0
+                0x00, 0x00 // Bound port: 0
+            )
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail with connection refused", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails with host unreachable error`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(
+                0x05, 0x04, 0x00, 0x01, // Version, Host unreachable (0x04), Reserved, IPv4
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00
+            )
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail with host unreachable", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake handles timeout`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(), // Don't send connect response
+            delayBeforeConnect = 2000 // Delay longer than socket timeout
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 500 // Short timeout
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail on timeout", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails with incomplete greeting response`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05), // Only 1 byte instead of 2
+            connectResponse = byteArrayOf()
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail with incomplete greeting", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
+    @Test
+    fun `SOCKS5 handshake fails with incomplete connect response`() = runBlocking {
+        val mockServer = MockSocks5Server(
+            greetingResponse = byteArrayOf(0x05, 0x00),
+            connectResponse = byteArrayOf(0x05, 0x00, 0x00) // Only 3 bytes instead of 10
+        )
+        
+        mockServer.start()
+        
+        try {
+            val socket = Socket("127.0.0.1", mockServer.port)
+            socket.soTimeout = 1000
+            
+            val result = tcpHandler.performSocks5Handshake(socket, "1.1.1.1", 80)
+            
+            assertFalse("Handshake should fail with incomplete connect response", result)
+            
+            socket.close()
+        } finally {
+            mockServer.stop()
+        }
+    }
+    
     /**
      * Helper function to build a TCP packet for testing.
      * Creates an IP header + TCP header + payload.
@@ -351,5 +570,73 @@ class TCPHandlerTest {
         buffer.put(payload)
         
         return buffer.array()
+    }
+    
+    /**
+     * Mock SOCKS5 server for testing handshake.
+     * Simulates a SOCKS5 proxy server with configurable responses.
+     */
+    private class MockSocks5Server(
+        private val greetingResponse: ByteArray,
+        private val connectResponse: ByteArray,
+        private val delayBeforeConnect: Long = 0
+    ) {
+        private var serverSocket: ServerSocket? = null
+        private var serverThread: Thread? = null
+        var receivedGreeting: ByteArray? = null
+        var receivedConnect: ByteArray? = null
+        val port: Int
+            get() = serverSocket?.localPort ?: 0
+        
+        fun start() {
+            serverSocket = ServerSocket(0) // Use any available port
+            serverThread = thread {
+                try {
+                    val clientSocket = serverSocket?.accept()
+                    clientSocket?.use { socket ->
+                        val input = socket.getInputStream()
+                        val output = socket.getOutputStream()
+                        
+                        // Read greeting
+                        receivedGreeting = ByteArray(3)
+                        input.read(receivedGreeting)
+                        
+                        // Send greeting response
+                        output.write(greetingResponse)
+                        output.flush()
+                        
+                        // If greeting was successful, handle CONNECT
+                        if (greetingResponse.size >= 2 && greetingResponse[1] == 0x00.toByte()) {
+                            // Read CONNECT request
+                            receivedConnect = ByteArray(10)
+                            input.read(receivedConnect)
+                            
+                            // Delay if requested (for timeout testing)
+                            if (delayBeforeConnect > 0) {
+                                Thread.sleep(delayBeforeConnect)
+                            }
+                            
+                            // Send CONNECT response
+                            if (connectResponse.isNotEmpty()) {
+                                output.write(connectResponse)
+                                output.flush()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore exceptions in mock server
+                }
+            }
+        }
+        
+        fun stop() {
+            try {
+                serverSocket?.close()
+                serverThread?.interrupt()
+                serverThread?.join(1000)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
     }
 }
