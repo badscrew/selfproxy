@@ -193,7 +193,8 @@
   - Verify statistics tracking
 -
 
-- [x] 9. Implement TCP connection termination
+- [ ] 9. Implement TCP connection termination
+
 
 
 
@@ -214,8 +215,11 @@
   - Test RST handling
   - Verify connection cleanup
   - Verify resources released
+-
 
-- [ ] 10. Implement TCP state machine
+- [x] 10. Implement TCP state machine
+
+
 
   - Add TcpState enum (CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT, etc.)
   - Implement state transitions in TcpConnection
@@ -223,7 +227,9 @@
   - Implement connection timeout for idle connections
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 9.5_
 
-- [ ] 10.1 Write unit tests for TCP state machine
+- [x] 10.1 Write unit tests for TCP state machine
+
+
   - Test state transitions
   - Test invalid state transitions
   - Test timeout handling

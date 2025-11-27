@@ -74,29 +74,104 @@ class TCPHandler(
             destPort = tcpHeader.destPort
         )
         
-        // Handle based on flags
+        // Get existing connection if any
+        val existingConnection = connectionTable.getTcpConnection(key)
+        
+        // Handle based on flags and current state
         when {
             tcpHeader.flags.syn && !tcpHeader.flags.ack -> {
                 // SYN packet - new connection
-                handleSyn(key, tcpHeader, tunOutputStream)
+                if (existingConnection == null || existingConnection.state == TcpState.CLOSED) {
+                    handleSyn(key, tcpHeader, tunOutputStream)
+                } else {
+                    logger.verbose(TAG, "Received SYN for existing connection in state ${existingConnection.state}, ignoring")
+                }
             }
             tcpHeader.flags.rst -> {
-                // RST packet - close connection immediately
+                // RST packet - close connection immediately (valid in any state)
                 handleRst(key, tunOutputStream)
             }
             tcpHeader.flags.fin -> {
                 // FIN packet - graceful connection close
-                handleFin(key, tcpHeader, tunOutputStream)
+                if (existingConnection != null && canHandleFin(existingConnection.state)) {
+                    handleFin(key, tcpHeader, tunOutputStream)
+                } else {
+                    logger.verbose(TAG, "Received FIN for connection in invalid state: ${existingConnection?.state}")
+                }
             }
             else -> {
                 // Data or ACK packet
                 val payload = extractTcpPayload(packet, ipHeader.headerLength, tcpHeader)
                 if (payload.isNotEmpty()) {
-                    handleData(key, tcpHeader, payload)
+                    if (existingConnection != null && existingConnection.state == TcpState.ESTABLISHED) {
+                        handleData(key, tcpHeader, payload)
+                    } else {
+                        logger.verbose(TAG, "Received data for connection in invalid state: ${existingConnection?.state}")
+                    }
                 } else {
-                    // Pure ACK packet, no data to forward
-                    logger.verbose(TAG, "ACK packet received for $key")
+                    // Pure ACK packet
+                    if (existingConnection != null) {
+                        handleAck(key, tcpHeader, existingConnection)
+                    } else {
+                        logger.verbose(TAG, "ACK packet received for unknown connection: $key")
+                    }
                 }
+            }
+        }
+    }
+    
+    /**
+     * Checks if a FIN packet can be handled in the current state.
+     * 
+     * @param state The current TCP state
+     * @return true if FIN can be handled, false otherwise
+     */
+    private fun canHandleFin(state: TcpState): Boolean {
+        return state == TcpState.ESTABLISHED || state == TcpState.FIN_WAIT_1 || state == TcpState.FIN_WAIT_2
+    }
+    
+    /**
+     * Handles a pure ACK packet (no data).
+     * 
+     * @param key The connection key
+     * @param tcpHeader The parsed TCP header
+     * @param connection The existing connection
+     */
+    private suspend fun handleAck(
+        key: ConnectionKey,
+        tcpHeader: TcpHeader,
+        connection: TcpConnection
+    ) {
+        logger.verbose(TAG, "ACK packet received for $key in state ${connection.state}")
+        
+        // Update last activity time
+        val updatedConnection = connection.copy(
+            lastActivityAt = System.currentTimeMillis()
+        )
+        connectionTable.addTcpConnection(updatedConnection)
+        
+        // Handle state-specific ACK processing
+        when (connection.state) {
+            TcpState.FIN_WAIT_1 -> {
+                // ACK for our FIN, transition to FIN_WAIT_2
+                val transitioned = connection.copy(
+                    state = TcpState.FIN_WAIT_2,
+                    lastActivityAt = System.currentTimeMillis()
+                )
+                connectionTable.addTcpConnection(transitioned)
+                logger.debug(TAG, "Connection transitioned to FIN_WAIT_2: $key")
+            }
+            TcpState.CLOSING -> {
+                // ACK for our FIN in simultaneous close, transition to TIME_WAIT
+                val transitioned = connection.copy(
+                    state = TcpState.TIME_WAIT,
+                    lastActivityAt = System.currentTimeMillis()
+                )
+                connectionTable.addTcpConnection(transitioned)
+                logger.debug(TAG, "Connection transitioned to TIME_WAIT: $key")
+            }
+            else -> {
+                // Normal ACK in other states, just update activity time
             }
         }
     }
@@ -330,9 +405,10 @@ class TCPHandler(
      * 1. Creates a ConnectionKey from the packet
      * 2. Establishes a SOCKS5 connection to the destination
      * 3. Performs SOCKS5 handshake
-     * 4. Adds the connection to the ConnectionTable
+     * 4. Adds the connection to the ConnectionTable with SYN_SENT state
      * 5. Starts a connection reader coroutine
      * 6. Sends a SYN-ACK packet back to TUN
+     * 7. Transitions to ESTABLISHED state
      * 
      * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4
      * 
@@ -349,19 +425,10 @@ class TCPHandler(
         
         // Check if connection already exists
         val existing = connectionTable.getTcpConnection(key)
-        if (existing != null) {
-            logger.verbose(TAG, "Connection already exists for $key, ignoring SYN")
+        if (existing != null && existing.state != TcpState.CLOSED) {
+            logger.verbose(TAG, "Connection already exists for $key in state ${existing.state}, ignoring SYN")
             return
         }
-        
-        // Establish SOCKS5 connection
-        val socksSocket = establishSocks5Connection(key) ?: run {
-            logger.error(TAG, "Failed to establish SOCKS5 connection for $key")
-            sendTcpRst(tunOutputStream, key)
-            return
-        }
-        
-        logger.debug(TAG, "SOCKS5 connection established for $key")
         
         // Initialize sequence numbers
         // Our initial sequence number (random)
@@ -370,10 +437,39 @@ class TCPHandler(
         val theirSeqNum = tcpHeader.sequenceNumber
         val ourAckNum = (theirSeqNum + 1) and 0xFFFFFFFF
         
-        // Create connection object
+        // Create a placeholder connection in SYN_SENT state
+        // This is needed because SOCKS5 connection might take time
         val now = System.currentTimeMillis()
+        val placeholderConnection = TcpConnection(
+            key = key,
+            socksSocket = Socket(), // Placeholder, will be replaced
+            state = TcpState.SYN_SENT,
+            sequenceNumber = ourSeqNum,
+            acknowledgmentNumber = ourAckNum,
+            createdAt = now,
+            lastActivityAt = now,
+            bytesSent = 0,
+            bytesReceived = 0,
+            readerJob = handlerScope.launch { } // Placeholder job
+        )
+        connectionTable.addTcpConnection(placeholderConnection)
+        
+        logger.debug(TAG, "Connection transitioned to SYN_SENT: $key")
+        
+        // Establish SOCKS5 connection
+        val socksSocket = establishSocks5Connection(key) ?: run {
+            logger.error(TAG, "Failed to establish SOCKS5 connection for $key")
+            connectionTable.removeTcpConnection(key)
+            sendTcpRst(tunOutputStream, key)
+            return
+        }
+        
+        logger.debug(TAG, "SOCKS5 connection established for $key")
+        
+        // Start connection reader
         val readerJob = startConnectionReader(key, socksSocket, tunOutputStream, ourSeqNum, ourAckNum)
         
+        // Update connection to ESTABLISHED state
         val connection = TcpConnection(
             key = key,
             socksSocket = socksSocket,
@@ -381,7 +477,7 @@ class TCPHandler(
             sequenceNumber = ourSeqNum + 1, // +1 for SYN
             acknowledgmentNumber = ourAckNum,
             createdAt = now,
-            lastActivityAt = now,
+            lastActivityAt = System.currentTimeMillis(),
             bytesSent = 0,
             bytesReceived = 0,
             readerJob = readerJob
@@ -390,7 +486,7 @@ class TCPHandler(
         // Add to connection table
         connectionTable.addTcpConnection(connection)
         
-        logger.info(TAG, "TCP connection established: $key")
+        logger.info(TAG, "TCP connection transitioned to ESTABLISHED: $key")
         
         // Send SYN-ACK back to TUN
         sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
@@ -467,13 +563,10 @@ class TCPHandler(
     /**
      * Handles a TCP FIN packet for graceful connection termination.
      * 
-     * This method:
-     * 1. Looks up the connection in ConnectionTable
-     * 2. Sends FIN to SOCKS5 socket (half-close)
-     * 3. Updates TCP state to FIN_WAIT_1
-     * 4. Sends FIN-ACK back to TUN
-     * 5. Removes connection from ConnectionTable
-     * 6. Cancels connection reader coroutine
+     * This method implements proper TCP state transitions:
+     * - ESTABLISHED -> FIN_WAIT_1 (we send FIN-ACK)
+     * - FIN_WAIT_1 -> CLOSING (simultaneous close)
+     * - FIN_WAIT_2 -> TIME_WAIT (normal close)
      * 
      * Requirements: 3.3, 3.4, 9.2
      * 
@@ -495,50 +588,115 @@ class TCPHandler(
             return
         }
         
-        try {
-            // Send FIN to SOCKS5 socket (shutdown output, half-close)
-            withContext(Dispatchers.IO) {
+        // Calculate acknowledgment number (acknowledge their FIN)
+        val ackNum = (tcpHeader.sequenceNumber + 1) and 0xFFFFFFFF
+        
+        // Handle based on current state
+        when (connection.state) {
+            TcpState.ESTABLISHED -> {
+                // Normal close: ESTABLISHED -> FIN_WAIT_1
+                logger.debug(TAG, "Connection $key: ESTABLISHED -> FIN_WAIT_1")
+                
                 try {
-                    connection.socksSocket.shutdownOutput()
-                    logger.verbose(TAG, "Sent FIN to SOCKS5 for $key")
+                    // Send FIN to SOCKS5 socket (shutdown output, half-close)
+                    withContext(Dispatchers.IO) {
+                        try {
+                            connection.socksSocket.shutdownOutput()
+                            logger.verbose(TAG, "Sent FIN to SOCKS5 for $key")
+                        } catch (e: Exception) {
+                            logger.verbose(TAG, "Failed to shutdown SOCKS5 output for $key: ${e.message}")
+                        }
+                    }
+                    
+                    // Update TCP state to FIN_WAIT_1
+                    val updatedConnection = connection.copy(
+                        state = TcpState.FIN_WAIT_1,
+                        acknowledgmentNumber = ackNum,
+                        lastActivityAt = System.currentTimeMillis()
+                    )
+                    connectionTable.addTcpConnection(updatedConnection)
+                    
+                    // Send FIN-ACK back to TUN
+                    sendTcpFinAck(
+                        tunOutputStream,
+                        key,
+                        connection.sequenceNumber,
+                        ackNum
+                    )
+                    
+                    logger.info(TAG, "Sent FIN-ACK for connection: $key, state=FIN_WAIT_1")
+                    
                 } catch (e: Exception) {
-                    logger.verbose(TAG, "Failed to shutdown SOCKS5 output for $key: ${e.message}")
+                    logger.error(TAG, "Error handling FIN for $key: ${e.message}", e)
+                    // Clean up on error
+                    cleanupConnection(key, connection)
                 }
             }
             
-            // Update TCP state to FIN_WAIT_1
-            val updatedConnection = connection.copy(
-                state = TcpState.FIN_WAIT_1,
-                lastActivityAt = System.currentTimeMillis()
-            )
-            connectionTable.addTcpConnection(updatedConnection)
-            
-            // Calculate acknowledgment number (acknowledge their FIN)
-            val ackNum = (tcpHeader.sequenceNumber + 1) and 0xFFFFFFFF
-            
-            // Send FIN-ACK back to TUN
-            sendTcpFinAck(
-                tunOutputStream,
-                key,
-                connection.sequenceNumber,
-                ackNum
-            )
-            
-            logger.info(TAG, "Sent FIN-ACK for connection: $key")
-            
-        } finally {
-            // Clean up connection resources
-            connectionTable.removeTcpConnection(key)
-            
-            try {
-                connection.readerJob.cancel()
-                connection.socksSocket.close()
-            } catch (e: Exception) {
-                logger.verbose(TAG, "Error closing connection resources for $key: ${e.message}")
+            TcpState.FIN_WAIT_1 -> {
+                // Simultaneous close: FIN_WAIT_1 -> CLOSING
+                logger.debug(TAG, "Connection $key: FIN_WAIT_1 -> CLOSING (simultaneous close)")
+                
+                val updatedConnection = connection.copy(
+                    state = TcpState.CLOSING,
+                    acknowledgmentNumber = ackNum,
+                    lastActivityAt = System.currentTimeMillis()
+                )
+                connectionTable.addTcpConnection(updatedConnection)
+                
+                // Send ACK for their FIN
+                sendTcpAck(tunOutputStream, key, connection.sequenceNumber, ackNum)
+                
+                logger.info(TAG, "Sent ACK for simultaneous close: $key, state=CLOSING")
             }
             
-            logger.debug(TAG, "Connection closed gracefully: $key")
+            TcpState.FIN_WAIT_2 -> {
+                // Normal close completion: FIN_WAIT_2 -> TIME_WAIT
+                logger.debug(TAG, "Connection $key: FIN_WAIT_2 -> TIME_WAIT")
+                
+                val updatedConnection = connection.copy(
+                    state = TcpState.TIME_WAIT,
+                    acknowledgmentNumber = ackNum,
+                    lastActivityAt = System.currentTimeMillis()
+                )
+                connectionTable.addTcpConnection(updatedConnection)
+                
+                // Send ACK for their FIN
+                sendTcpAck(tunOutputStream, key, connection.sequenceNumber, ackNum)
+                
+                logger.info(TAG, "Sent ACK for FIN: $key, state=TIME_WAIT")
+                
+                // Clean up after a short delay (simplified TIME_WAIT)
+                handlerScope.launch {
+                    kotlinx.coroutines.delay(1000) // 1 second instead of 2*MSL
+                    cleanupConnection(key, connection)
+                    logger.debug(TAG, "Connection cleaned up after TIME_WAIT: $key")
+                }
+            }
+            
+            else -> {
+                logger.verbose(TAG, "Received FIN in unexpected state ${connection.state} for $key")
+            }
         }
+    }
+    
+    /**
+     * Cleans up a connection by removing it from the table and closing resources.
+     * 
+     * @param key The connection key
+     * @param connection The connection to clean up
+     */
+    private suspend fun cleanupConnection(key: ConnectionKey, connection: TcpConnection) {
+        connectionTable.removeTcpConnection(key)
+        
+        try {
+            connection.readerJob.cancel()
+            connection.socksSocket.close()
+        } catch (e: Exception) {
+            logger.verbose(TAG, "Error closing connection resources for $key: ${e.message}")
+        }
+        
+        logger.debug(TAG, "Connection cleaned up: $key")
     }
     
     /**
@@ -848,6 +1006,47 @@ class TCPHandler(
         }
         
         logger.verbose(TAG, "Sent FIN-ACK: $key seq=$seqNum ack=$ackNum")
+    }
+    
+    /**
+     * Sends a pure TCP ACK packet to the TUN interface.
+     * 
+     * @param tunOutputStream Output stream to write the packet
+     * @param key The connection key
+     * @param seqNum Our sequence number
+     * @param ackNum Our acknowledgment number
+     */
+    private suspend fun sendTcpAck(
+        tunOutputStream: FileOutputStream,
+        key: ConnectionKey,
+        seqNum: Long,
+        ackNum: Long
+    ) {
+        val packet = packetBuilder.buildTcpPacket(
+            sourceIp = key.destIp,
+            sourcePort = key.destPort,
+            destIp = key.sourceIp,
+            destPort = key.sourcePort,
+            sequenceNumber = seqNum,
+            acknowledgmentNumber = ackNum,
+            flags = TcpFlags(
+                fin = false,
+                syn = false,
+                rst = false,
+                psh = false,
+                ack = true,
+                urg = false
+            ),
+            windowSize = 65535,
+            payload = byteArrayOf()
+        )
+        
+        withContext(Dispatchers.IO) {
+            tunOutputStream.write(packet)
+            tunOutputStream.flush()
+        }
+        
+        logger.verbose(TAG, "Sent ACK: $key seq=$seqNum ack=$ackNum")
     }
     
     /**

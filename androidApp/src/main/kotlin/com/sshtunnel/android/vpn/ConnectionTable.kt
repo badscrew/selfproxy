@@ -110,17 +110,29 @@ class ConnectionTable {
      * Closes connections that have been idle for longer than the specified timeout.
      * Default timeout is 2 minutes (120,000 ms).
      * 
+     * Also cleans up connections in TIME_WAIT state that have exceeded the TIME_WAIT timeout.
+     * 
      * @param idleTimeoutMs Idle timeout in milliseconds (default: 120,000 = 2 minutes)
+     * @param timeWaitTimeoutMs TIME_WAIT timeout in milliseconds (default: 30,000 = 30 seconds)
      * Requirements: 9.3, 9.5
      */
-    suspend fun cleanupIdleConnections(idleTimeoutMs: Long = 120_000) {
+    suspend fun cleanupIdleConnections(
+        idleTimeoutMs: Long = 120_000,
+        timeWaitTimeoutMs: Long = 30_000
+    ) {
         val now = System.currentTimeMillis()
         val connectionsToRemove = mutableListOf<ConnectionKey>()
         
         lock.withLock {
-            // Find idle TCP connections
+            // Find idle TCP connections or connections in TIME_WAIT
             tcpConnections.forEach { (key, connection) ->
-                if (now - connection.lastActivityAt > idleTimeoutMs) {
+                val timeout = if (connection.state == TcpState.TIME_WAIT) {
+                    timeWaitTimeoutMs
+                } else {
+                    idleTimeoutMs
+                }
+                
+                if (now - connection.lastActivityAt > timeout) {
                     connectionsToRemove.add(key)
                 }
             }
