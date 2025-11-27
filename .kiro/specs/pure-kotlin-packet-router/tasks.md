@@ -73,6 +73,7 @@
 
 
 
+
   - Create ConnectionTable class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement addTcpConnection(), getTcpConnection(), removeTcpConnection()
   - Implement addUdpConnection(), getUdpConnection(), removeUdpConnection()
@@ -99,7 +100,11 @@
 
 ## Phase 2: TCP Handler Implementation
 
-- [ ] 5. Implement TCP packet parsing
+- [x] 5. Implement TCP packet parsing
+
+
+
+
   - Create TCPHandler class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement parseTcpHeader() method
   - Extract source port, dest port, sequence number, ack number
@@ -107,7 +112,9 @@
   - Extract TCP payload
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 5.1 Write unit tests for TCP parsing
+- [x] 5.1 Write unit tests for TCP parsing
+
+
   - Test TCP header parsing
   - Test flag extraction
   - Test payload extraction
