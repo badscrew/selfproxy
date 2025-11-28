@@ -3,11 +3,11 @@ package com.sshtunnel.android.vpn
 /**
  * Parsed UDP header information
  * 
- * UDP header is simpler than TCP:
- * - Source port (2 bytes)
- * - Destination port (2 bytes)
+ * UDP header structure (8 bytes):
+ * - Source Port (2 bytes)
+ * - Destination Port (2 bytes)
  * - Length (2 bytes) - includes header + data
- * - Checksum (2 bytes) - optional for IPv4, can be 0
+ * - Checksum (2 bytes)
  */
 data class UdpHeader(
     val sourcePort: Int,

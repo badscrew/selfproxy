@@ -84,7 +84,7 @@ class PacketBuilderTest {
             destPort = 80,
             sequenceNumber = 1000,
             acknowledgmentNumber = 0,
-            flags = TcpFlags(syn = true),
+            flags = TcpFlags(syn = true, ack = false, fin = false, rst = false, psh = false, urg = false),
             payload = byteArrayOf()
         )
         
@@ -133,7 +133,7 @@ class PacketBuilderTest {
             destPort = 443,
             sequenceNumber = 5000,
             acknowledgmentNumber = 3000,
-            flags = TcpFlags(ack = true, psh = true),
+            flags = TcpFlags(ack = true, psh = true, syn = false, fin = false, rst = false, urg = false),
             payload = payload
         )
         
@@ -253,13 +253,13 @@ class PacketBuilderTest {
     
     @Test
     fun `TcpFlags toByte converts correctly`() {
-        val flags = TcpFlags(syn = true, ack = true)
+        val flags = TcpFlags(syn = true, ack = true, fin = false, rst = false, psh = false, urg = false)
         assertEquals(0x12, flags.toByte()) // SYN (0x02) + ACK (0x10)
         
-        val finAck = TcpFlags(fin = true, ack = true)
+        val finAck = TcpFlags(fin = true, ack = true, syn = false, rst = false, psh = false, urg = false)
         assertEquals(0x11, finAck.toByte()) // FIN (0x01) + ACK (0x10)
         
-        val rst = TcpFlags(rst = true)
+        val rst = TcpFlags(rst = true, fin = false, syn = false, ack = false, psh = false, urg = false)
         assertEquals(0x04, rst.toByte()) // RST (0x04)
     }
     
@@ -336,7 +336,7 @@ class PacketBuilderTest {
             destPort = 80,
             sequenceNumber = 1000,
             acknowledgmentNumber = 2000,
-            flags = TcpFlags(ack = true, psh = true),
+            flags = TcpFlags(ack = true, psh = true, syn = false, fin = false, rst = false, urg = false),
             payload = largePayload
         )
         

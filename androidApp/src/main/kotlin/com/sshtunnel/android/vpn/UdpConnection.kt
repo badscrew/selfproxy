@@ -3,11 +3,12 @@ package com.sshtunnel.android.vpn
 import java.net.Socket
 
 /**
- * Represents an active UDP connection
+ * Represents an active UDP connection state.
  * 
  * UDP is connectionless, but we track "connections" for:
- * - DNS queries (port 53)
- * - SOCKS5 UDP ASSOCIATE (future enhancement)
+ * - DNS query/response matching
+ * - Statistics tracking
+ * - Resource management
  */
 data class UdpConnection(
     val key: ConnectionKey,
