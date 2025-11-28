@@ -23,7 +23,7 @@ class StatisticsTest {
     
     @Before
     fun setup() {
-        connectionTable = ConnectionTable()
+        connectionTable = ConnectionTable(TestLogger())
     }
     
     /**
@@ -584,3 +584,6 @@ class StatisticsTest {
         assertEquals(1, stats.totalUdpConnections)
     }
 }
+
+
+

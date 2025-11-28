@@ -21,7 +21,7 @@ class TcpStateMachineTest {
     
     @Before
     fun setup() {
-        connectionTable = ConnectionTable()
+        connectionTable = ConnectionTable(TestLogger())
         logger = object : Logger {
             override fun verbose(tag: String, message: String, throwable: Throwable?) {}
             override fun debug(tag: String, message: String, throwable: Throwable?) {}
@@ -456,3 +456,6 @@ class TcpStateMachineTest {
         assertEquals(TcpState.ESTABLISHED, afterCleanup!!.state)
     }
 }
+
+
+

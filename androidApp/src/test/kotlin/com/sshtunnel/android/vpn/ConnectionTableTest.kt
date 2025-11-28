@@ -17,10 +17,12 @@ import java.net.Socket
 class ConnectionTableTest {
     
     private lateinit var connectionTable: ConnectionTable
+    private lateinit var testLogger: TestLogger
     
     @Before
     fun setup() {
-        connectionTable = ConnectionTable()
+        testLogger = TestLogger()
+        connectionTable = ConnectionTable(testLogger)
     }
     
     @Test
@@ -632,3 +634,6 @@ class ConnectionTableTest {
         return Socket()
     }
 }
+
+
+

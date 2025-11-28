@@ -20,6 +20,8 @@ import java.net.Socket
  */
 class ConnectionTablePropertiesTest {
     
+    private val testLogger = TestLogger()
+    
     @Test
     fun `TCP connection establishment always creates connection table entry`() = runTest {
         // Feature: pure-kotlin-packet-router, Property: TCP connection establishment always creates connection table entry
@@ -30,7 +32,7 @@ class ConnectionTablePropertiesTest {
             Arb.connectionKey(Protocol.TCP)
         ) { key ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val connection = createMockTcpConnection(key)
             
             // Act
@@ -58,7 +60,7 @@ class ConnectionTablePropertiesTest {
             Arb.connectionKey(Protocol.UDP)
         ) { key ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val connection = createMockUdpConnection(key)
             
             // Act
@@ -82,7 +84,7 @@ class ConnectionTablePropertiesTest {
             Arb.connectionKey(Protocol.TCP)
         ) { key ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val connection = createMockTcpConnection(key)
             connectionTable.addTcpConnection(connection)
             
@@ -107,7 +109,7 @@ class ConnectionTablePropertiesTest {
             Arb.int(1..50) // Number of connections to add
         ) { numConnections ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             
             // Act - Add connections
             repeat(numConnections) { i ->
@@ -142,7 +144,7 @@ class ConnectionTablePropertiesTest {
             Arb.long(0L..1_000_000L)  // bytes received
         ) { key, bytesSent, bytesReceived ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val connection = createMockTcpConnection(
                 key,
                 bytesSent = bytesSent,
@@ -170,7 +172,7 @@ class ConnectionTablePropertiesTest {
             Arb.long(1_000L..300_000L) // timeout in ms (1 second to 5 minutes)
         ) { key, timeoutMs ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val now = System.currentTimeMillis()
             val oldTime = now - timeoutMs - 1000L // Older than timeout
             
@@ -200,7 +202,7 @@ class ConnectionTablePropertiesTest {
             Arb.long(60_000L..300_000L) // timeout in ms (1 to 5 minutes)
         ) { key, timeoutMs ->
             // Arrange
-            val connectionTable = ConnectionTable()
+            val connectionTable = ConnectionTable(testLogger)
             val now = System.currentTimeMillis()
             val recentTime = now - (timeoutMs / 2) // Within timeout (half the timeout)
             
@@ -284,3 +286,6 @@ fun Arb.Companion.ipAddress(): Arb<String> = arbitrary {
  * Custom Arb generator for port numbers
  */
 fun Arb.Companion.port(): Arb<Int> = Arb.int(1024..65535)
+
+
+

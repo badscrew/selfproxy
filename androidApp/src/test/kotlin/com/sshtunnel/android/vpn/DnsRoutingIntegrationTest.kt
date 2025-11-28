@@ -47,8 +47,8 @@ class DnsRoutingIntegrationTest {
         mockSocksServer.start()
         
         // Setup components
-        connectionTable = ConnectionTable()
         logger = TestLogger()
+        connectionTable = ConnectionTable(logger)
         mockTunOutputStream = MockFileOutputStream()
         
         udpHandler = UDPHandler(
