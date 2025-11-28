@@ -1,173 +1,207 @@
 package com.sshtunnel.android.vpn
 
+import com.sshtunnel.android.vpn.packet.IPPacketParser
+import com.sshtunnel.android.vpn.packet.Protocol
+import com.sshtunnel.logging.Logger
+import com.sshtunnel.logging.LoggerImpl
 import kotlinx.coroutines.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.nio.ByteBuffer
 
 /**
  * Routes IP packets from TUN interface through SOCKS5 proxy.
  * 
  * This class handles the core packet routing logic:
- * - Reading packets from TUN interface
- * - Parsing IP headers
- * - Routing TCP/UDP through SOCKS5
+ * - Reading packets from TUN interface using IPPacketParser
+ * - Dispatching TCP packets to TCPHandler
+ * - Dispatching UDP packets to UDPHandler
+ * - Managing connections through ConnectionTable
  * - Writing responses back to TUN
+ * 
+ * Requirements: 1.1, 1.2, 1.3, 1.5
  */
 class PacketRouter(
     private val tunInputStream: FileInputStream,
     private val tunOutputStream: FileOutputStream,
-    private val socksPort: Int
+    private val socksPort: Int,
+    private val logger: Logger = LoggerImpl()
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val tcpConnections = mutableMapOf<ConnectionKey, TcpConnection>()
-    private val udpConnections = mutableMapOf<ConnectionKey, UdpConnection>()
+    private val connectionTable = ConnectionTable()
+    private val tcpHandler = TCPHandler(socksPort, connectionTable, logger)
+    private val udpHandler = UDPHandler(socksPort, connectionTable, logger)
     
     companion object {
         private const val TAG = "PacketRouter"
         private const val MAX_PACKET_SIZE = 32767
-        private const val DNS_PORT = 53
-        private const val SOCKS5_VERSION: Byte = 0x05
-        private const val SOCKS5_NO_AUTH: Byte = 0x00
-        private const val SOCKS5_CMD_CONNECT: Byte = 0x01
-        private const val SOCKS5_CMD_UDP_ASSOCIATE: Byte = 0x03
-        private const val SOCKS5_ATYP_IPV4: Byte = 0x01
-        private const val SOCKS5_ATYP_DOMAIN: Byte = 0x03
-        private const val SOCKS5_SUCCESS: Byte = 0x00
+        private const val CLEANUP_INTERVAL_MS = 30_000L // 30 seconds
+        private const val IDLE_TIMEOUT_MS = 120_000L // 2 minutes
     }
     
-    data class ConnectionKey(
-        val sourceIp: String,
-        val sourcePort: Int,
-        val destIp: String,
-        val destPort: Int
-    )
+    private var cleanupJob: Job? = null
     
-    data class TcpConnection(
-        val socket: Socket,
-        val key: ConnectionKey,
-        val job: Job
-    )
-    
-    data class UdpConnection(
-        val socket: Socket,
-        val key: ConnectionKey,
-        val job: Job
-    )
-    
+    /**
+     * Starts the packet router.
+     * 
+     * Begins reading packets from TUN interface and starts periodic connection cleanup.
+     * 
+     * Requirements: 1.1
+     */
     fun start() {
+        logger.info(TAG, "Starting packet router with SOCKS port $socksPort")
+        
+        // Start packet routing
         scope.launch {
             routePackets()
         }
-    }
-    
-    fun stop() {
-        scope.cancel()
-        tcpConnections.values.forEach { 
-            it.job.cancel()
-            it.socket.close() 
-        }
-        tcpConnections.clear()
         
-        udpConnections.values.forEach {
-            it.job.cancel()
-            it.socket.close()
+        // Start periodic connection cleanup
+        cleanupJob = scope.launch {
+            while (isActive) {
+                delay(CLEANUP_INTERVAL_MS)
+                try {
+                    connectionTable.cleanupIdleConnections(IDLE_TIMEOUT_MS)
+                    logger.verbose(TAG, "Connection cleanup completed")
+                } catch (e: Exception) {
+                    logger.error(TAG, "Error during connection cleanup: ${e.message}", e)
+                }
+            }
         }
-        udpConnections.clear()
+        
+        logger.info(TAG, "Packet router started successfully")
     }
     
+    /**
+     * Stops the packet router.
+     * 
+     * Cancels all coroutines and closes all connections.
+     * 
+     * Requirements: 9.4
+     */
+    fun stop() {
+        logger.info(TAG, "Stopping packet router")
+        
+        // Cancel cleanup job
+        cleanupJob?.cancel()
+        cleanupJob = null
+        
+        // Close all connections
+        scope.launch {
+            try {
+                connectionTable.closeAllConnections()
+                logger.debug(TAG, "All connections closed")
+            } catch (e: Exception) {
+                logger.error(TAG, "Error closing connections: ${e.message}", e)
+            }
+        }
+        
+        // Cancel scope
+        scope.cancel()
+        
+        logger.info(TAG, "Packet router stopped")
+    }
+    
+    /**
+     * Gets router statistics.
+     * 
+     * @return RouterStatistics with current metrics
+     * Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
+     */
+    fun getStatistics(): RouterStatistics {
+        return connectionTable.getStatistics()
+    }
+    
+    /**
+     * Main packet routing loop.
+     * 
+     * Continuously reads packets from TUN interface and dispatches them to
+     * appropriate protocol handlers.
+     * 
+     * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1, 11.2, 11.3, 11.4, 11.5
+     */
     private suspend fun routePackets() {
         val buffer = ByteArray(MAX_PACKET_SIZE)
         
         withContext(Dispatchers.IO) {
             try {
+                logger.debug(TAG, "Starting packet routing loop")
+                
                 while (isActive) {
-                    val length = tunInputStream.read(buffer)
-                    if (length > 0) {
-                        val packet = buffer.copyOf(length)
-                        launch { processPacket(packet) }
+                    try {
+                        val length = tunInputStream.read(buffer)
+                        
+                        if (length > 0) {
+                            val packet = buffer.copyOf(length)
+                            // Process each packet in a separate coroutine for concurrency
+                            launch { processPacket(packet) }
+                        } else if (length < 0) {
+                            logger.error(TAG, "TUN interface closed (read returned $length)")
+                            break
+                        }
+                    } catch (e: java.io.IOException) {
+                        if (isActive) {
+                            logger.error(TAG, "Error reading from TUN interface: ${e.message}", e)
+                            delay(100) // Brief pause before retry
+                        }
                     }
                 }
             } catch (e: Exception) {
                 if (isActive) {
-                    android.util.Log.e(TAG, "Error routing packets: ${e.message}", e)
+                    logger.error(TAG, "Fatal error in packet routing: ${e.message}", e)
                 }
+            } finally {
+                logger.info(TAG, "Packet routing loop stopped")
             }
         }
     }
     
+    /**
+     * Processes a single IP packet.
+     * 
+     * Parses the IP header and dispatches to the appropriate protocol handler.
+     * Handles errors gracefully to prevent one bad packet from crashing the router.
+     * 
+     * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1, 11.2, 11.3, 11.4, 11.5
+     */
     private suspend fun processPacket(packet: ByteArray) {
         try {
-            // Parse IP header
-            val ipVersion = (packet[0].toInt() shr 4) and 0x0F
+            // Parse IP header using IPPacketParser
+            val ipHeader = IPPacketParser.parseIPv4Header(packet)
             
-            if (ipVersion != 4) {
-                // Only IPv4 supported for now
+            if (ipHeader == null) {
+                logger.verbose(TAG, "Failed to parse IP header, dropping packet")
                 return
             }
             
-            val protocol = packet[9].toInt() and 0xFF
+            // Log packet reception in verbose mode
+            logger.verbose(
+                TAG,
+                "Received packet: ${ipHeader.sourceIP} -> ${ipHeader.destIP}, " +
+                "protocol=${ipHeader.protocol}, length=${ipHeader.totalLength}"
+            )
             
-            when (protocol) {
-                6 -> handleTcpPacket(packet) // TCP
-                17 -> handleUdpPacket(packet) // UDP
-                else -> {
-                    // Ignore other protocols
+            // Dispatch to appropriate protocol handler
+            when (ipHeader.protocol) {
+                Protocol.TCP -> {
+                    tcpHandler.handleTcpPacket(packet, ipHeader, tunOutputStream)
+                }
+                Protocol.UDP -> {
+                    udpHandler.handleUdpPacket(packet, ipHeader, tunOutputStream)
+                }
+                Protocol.ICMP -> {
+                    logger.verbose(TAG, "ICMP packet received, not supported (dropping)")
+                }
+                Protocol.UNKNOWN -> {
+                    logger.verbose(TAG, "Unknown protocol packet received (dropping)")
                 }
             }
+            
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Error processing packet: ${e.message}", e)
+            logger.error(TAG, "Error processing packet: ${e.message}", e)
+            // Continue processing next packet - don't let one bad packet crash the router
         }
     }
-    
-    private suspend fun handleTcpPacket(packet: ByteArray) {
-        try {
-            // Parse IP header
-            val ipHeaderLength = (packet[0].toInt() and 0x0F) * 4
-            
-            // Extract source and destination IPs
-            val sourceIp = InetAddress.getByAddress(packet.copyOfRange(12, 16)).hostAddress ?: return
-            val destIp = InetAddress.getByAddress(packet.copyOfRange(16, 20)).hostAddress ?: return
-            
-            // Parse TCP header
-            val tcpHeaderStart = ipHeaderLength
-            val sourcePort = ((packet[tcpHeaderStart].toInt() and 0xFF) shl 8) or 
-                            (packet[tcpHeaderStart + 1].toInt() and 0xFF)
-            val destPort = ((packet[tcpHeaderStart + 2].toInt() and 0xFF) shl 8) or 
-                          (packet[tcpHeaderStart + 3].toInt() and 0xFF)
-            
-            val flags = packet[tcpHeaderStart + 13].toInt() and 0xFF
-            val syn = (flags and 0x02) != 0
-            val fin = (flags and 0x01) != 0
-            val rst = (flags and 0x04) != 0
-            
-            val connectionKey = ConnectionKey(sourceIp, sourcePort, destIp, destPort)
-            
-            // Handle connection lifecycle
-            when {
-                syn && !tcpConnections.containsKey(connectionKey) -> {
-                    // New connection - establish SOCKS5 connection
-                    establishTcpConnection(connectionKey, packet)
-                }
-                fin || rst -> {
-                    // Close connection
-                    closeTcpConnection(connectionKey)
-                }
-                else -> {
-                    // Forward data through existing connection
-                    forwardTcpData(connectionKey, packet, ipHeaderLength)
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e(TAG, "Error handling TCP packet: ${e.message}", e)
-        }
-    }
-    
-    private suspend fun establishTcpConnection(key: ConnectionKey, @Suppress("UNUSED_PARAMETER") synPacket: ByteArray) {
-        withContext(Dispatchers.IO) {
+}
             try {
                 // Create socket to SOCKS5 proxy
                 val socket = Socket()
