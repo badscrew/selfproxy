@@ -271,12 +271,17 @@
 
 
 
+
   - Test DNS query through SOCKS5
   - Test DNS response construction
   - Test DNS timeout handling
   - Use mock DNS server
 
-- [ ] 13. Implement UDP response packet construction
+- [x] 13. Implement UDP response packet construction
+
+
+
+
   - Implement sendUdpPacket() method
   - Build IP header with swapped source/dest
   - Build UDP header with correct length
@@ -284,7 +289,9 @@
   - Write packet to TUN interface
   - _Requirements: 6.5, 8.3_
 
-- [ ] 13.1 Write unit tests for UDP packet construction
+- [x] 13.1 Write unit tests for UDP packet construction
+
+
   - Test UDP response packet structure
   - Test checksum calculation
   - Test DNS response packet
@@ -292,6 +299,7 @@
 ## Phase 4: PacketRouter Integration
 
 - [ ] 14. Refactor PacketRouter to use new components
+
   - Update PacketRouter class to use IPPacketParser
   - Update to use TCPHandler for TCP packets
   - Update to use UDPHandler for UDP packets
@@ -313,6 +321,7 @@
   - Verify no references to old implementation remain
 
 - [ ] 15. Implement packet routing main loop
+
   - Implement routePackets() method with coroutine
   - Read packets from TUN FileInputStream
   - Parse IP header for each packet
@@ -327,6 +336,7 @@
   - Test multiple concurrent connections
 
 - [ ] 16. Implement connection cleanup
+
   - Add periodic cleanup coroutine
   - Check for idle connections every 30 seconds
   - Close connections idle for >2 minutes
@@ -339,6 +349,7 @@
   - Test resource release
 
 - [ ] 17. Implement statistics tracking
+
   - Track bytes sent/received per connection
   - Track connection duration
   - Implement getStatistics() method
@@ -354,6 +365,7 @@
 ## Phase 5: Logging and Debugging
 
 - [ ] 18. Implement comprehensive logging
+
   - Add verbose logging for packet reception
   - Log connection establishment with details
   - Log connection closure with reason and duration
@@ -368,6 +380,7 @@
   - Verify sensitive data is sanitized
 
 - [ ] 19. Add error handling and recovery
+
   - Wrap all packet processing in try-catch
   - Log errors with context
   - Continue processing after errors
@@ -385,6 +398,7 @@
 ## Phase 6: Testing and Optimization
 
 - [ ] 20. Integration testing with real SSH tunnel
+
   - Test HTTP browsing (port 80)
   - Test HTTPS browsing (port 443)
   - Test DNS resolution
@@ -394,6 +408,7 @@
   - _Requirements: All_
 
 - [ ] 21. Performance testing and optimization
+
   - Measure throughput (target: 10 Mbps)
   - Measure latency overhead (target: <10ms)
   - Measure memory usage (target: <50MB)
@@ -403,6 +418,7 @@
   - _Requirements: Non-functional requirements_
 
 - [ ] 22. Memory leak testing
+
   - Run extended test sessions (1+ hour)
   - Monitor memory usage over time
   - Check for connection leaks
@@ -411,6 +427,7 @@
   - _Requirements: 9.2, 9.3, 9.4_
 
 - [ ] 23. Manual testing checklist
+
   - [ ] HTTP browsing works
   - [ ] HTTPS browsing works
   - [ ] DNS resolution works
