@@ -7,6 +7,7 @@ import com.sshtunnel.logging.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -39,6 +40,11 @@ class UDPHandler(
     
     /**
      * Handles a UDP packet from the TUN interface.
+     * 
+     * Wraps all packet processing in error handling to ensure one bad packet
+     * doesn't crash the router.
+     * 
+     * Requirements: 11.1, 11.2, 11.3, 11.4, 11.5
      * 
      * @param packet The complete IP packet containing UDP data
      * @param ipHeader The parsed IP header
@@ -83,7 +89,14 @@ class UDPHandler(
             }
             
         } catch (e: Exception) {
-            logger.error(TAG, "Error handling UDP packet: ${e.message}", e)
+            // Log error with context and continue processing
+            // Requirements: 11.1, 11.2, 11.5
+            logger.error(
+                TAG,
+                "Error handling UDP packet from ${ipHeader.sourceIP} to ${ipHeader.destIP}: ${e.message}",
+                e
+            )
+            // Continue processing - don't let one bad packet crash the router
         }
     }
     
@@ -461,14 +474,16 @@ class UDPHandler(
      * - Calculates UDP checksum
      * - Writes packet to TUN interface
      * 
+     * Handles TUN interface write errors gracefully.
+     * 
+     * Requirements: 6.5, 8.3, 11.3, 11.4
+     * 
      * @param tunOutputStream Output stream to write the packet
      * @param sourceIp Source IP address for the response
      * @param sourcePort Source port for the response
      * @param destIp Destination IP address for the response
      * @param destPort Destination port for the response
      * @param payload UDP payload data
-     * 
-     * Requirements: 6.5, 8.3
      */
     private suspend fun sendUdpPacket(
         tunOutputStream: FileOutputStream,
@@ -499,8 +514,16 @@ class UDPHandler(
             
             logger.verbose(TAG, "UDP packet sent successfully: ${packet.size} bytes")
             
+        } catch (e: IOException) {
+            // TUN interface write error - log and continue
+            // Requirements: 11.4
+            logger.error(TAG, "Failed to write UDP packet to TUN: ${e.message}", e)
+            // Don't throw - UDP is best-effort, continue processing
         } catch (e: Exception) {
-            logger.error(TAG, "Error sending UDP packet: ${e.message}", e)
+            // Unexpected error - log and continue
+            // Requirements: 11.1, 11.5
+            logger.error(TAG, "Unexpected error sending UDP packet: ${e.message}", e)
+            // Don't throw - continue processing other packets
         }
     }
 }

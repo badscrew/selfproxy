@@ -42,6 +42,11 @@ class TCPHandler(
     /**
      * Handles a TCP packet from the TUN interface.
      * 
+     * Wraps all packet processing in error handling to ensure one bad packet
+     * doesn't crash the router.
+     * 
+     * Requirements: 11.1, 11.2, 11.3, 11.4, 11.5
+     * 
      * @param packet The raw IP packet bytes
      * @param ipHeader The parsed IP header
      * @param tunOutputStream Output stream to write response packets
@@ -51,72 +56,84 @@ class TCPHandler(
         ipHeader: IPv4Header,
         tunOutputStream: FileOutputStream
     ) {
-        // Parse TCP header
-        val tcpHeader = parseTcpHeader(packet, ipHeader.headerLength) ?: run {
-            logger.verbose(TAG, "Failed to parse TCP header")
-            return
-        }
-        
-        logger.verbose(
-            TAG,
-            "TCP packet: ${ipHeader.sourceIP}:${tcpHeader.sourcePort} -> " +
-            "${ipHeader.destIP}:${tcpHeader.destPort} " +
-            "flags=${formatFlags(tcpHeader.flags)} " +
-            "seq=${tcpHeader.sequenceNumber} ack=${tcpHeader.acknowledgmentNumber}"
-        )
-        
-        // Create connection key
-        val key = ConnectionKey(
-            protocol = Protocol.TCP,
-            sourceIp = ipHeader.sourceIP,
-            sourcePort = tcpHeader.sourcePort,
-            destIp = ipHeader.destIP,
-            destPort = tcpHeader.destPort
-        )
-        
-        // Get existing connection if any
-        val existingConnection = connectionTable.getTcpConnection(key)
-        
-        // Handle based on flags and current state
-        when {
-            tcpHeader.flags.syn && !tcpHeader.flags.ack -> {
-                // SYN packet - new connection
-                if (existingConnection == null || existingConnection.state == TcpState.CLOSED) {
-                    handleSyn(key, tcpHeader, tunOutputStream)
-                } else {
-                    logger.verbose(TAG, "Received SYN for existing connection in state ${existingConnection.state}, ignoring")
-                }
+        try {
+            // Parse TCP header
+            val tcpHeader = parseTcpHeader(packet, ipHeader.headerLength) ?: run {
+                logger.verbose(TAG, "Failed to parse TCP header, dropping packet")
+                return
             }
-            tcpHeader.flags.rst -> {
-                // RST packet - close connection immediately (valid in any state)
-                handleRst(key, tunOutputStream)
-            }
-            tcpHeader.flags.fin -> {
-                // FIN packet - graceful connection close
-                if (existingConnection != null && canHandleFin(existingConnection.state)) {
-                    handleFin(key, tcpHeader, tunOutputStream)
-                } else {
-                    logger.verbose(TAG, "Received FIN for connection in invalid state: ${existingConnection?.state}")
-                }
-            }
-            else -> {
-                // Data or ACK packet
-                val payload = extractTcpPayload(packet, ipHeader.headerLength, tcpHeader)
-                if (payload.isNotEmpty()) {
-                    if (existingConnection != null && existingConnection.state == TcpState.ESTABLISHED) {
-                        handleData(key, tcpHeader, payload)
+            
+            logger.verbose(
+                TAG,
+                "TCP packet: ${ipHeader.sourceIP}:${tcpHeader.sourcePort} -> " +
+                "${ipHeader.destIP}:${tcpHeader.destPort} " +
+                "flags=${formatFlags(tcpHeader.flags)} " +
+                "seq=${tcpHeader.sequenceNumber} ack=${tcpHeader.acknowledgmentNumber}"
+            )
+            
+            // Create connection key
+            val key = ConnectionKey(
+                protocol = Protocol.TCP,
+                sourceIp = ipHeader.sourceIP,
+                sourcePort = tcpHeader.sourcePort,
+                destIp = ipHeader.destIP,
+                destPort = tcpHeader.destPort
+            )
+            
+            // Get existing connection if any
+            val existingConnection = connectionTable.getTcpConnection(key)
+            
+            // Handle based on flags and current state
+            when {
+                tcpHeader.flags.syn && !tcpHeader.flags.ack -> {
+                    // SYN packet - new connection
+                    if (existingConnection == null || existingConnection.state == TcpState.CLOSED) {
+                        handleSyn(key, tcpHeader, tunOutputStream)
                     } else {
-                        logger.verbose(TAG, "Received data for connection in invalid state: ${existingConnection?.state}")
-                    }
-                } else {
-                    // Pure ACK packet
-                    if (existingConnection != null) {
-                        handleAck(key, tcpHeader, existingConnection)
-                    } else {
-                        logger.verbose(TAG, "ACK packet received for unknown connection: $key")
+                        logger.verbose(TAG, "Received SYN for existing connection in state ${existingConnection.state}, ignoring")
                     }
                 }
+                tcpHeader.flags.rst -> {
+                    // RST packet - close connection immediately (valid in any state)
+                    handleRst(key, tunOutputStream)
+                }
+                tcpHeader.flags.fin -> {
+                    // FIN packet - graceful connection close
+                    if (existingConnection != null && canHandleFin(existingConnection.state)) {
+                        handleFin(key, tcpHeader, tunOutputStream)
+                    } else {
+                        logger.verbose(TAG, "Received FIN for connection in invalid state: ${existingConnection?.state}")
+                    }
+                }
+                else -> {
+                    // Data or ACK packet
+                    val payload = extractTcpPayload(packet, ipHeader.headerLength, tcpHeader)
+                    if (payload.isNotEmpty()) {
+                        if (existingConnection != null && existingConnection.state == TcpState.ESTABLISHED) {
+                            handleData(key, tcpHeader, payload)
+                        } else {
+                            logger.verbose(TAG, "Received data for connection in invalid state: ${existingConnection?.state}")
+                        }
+                    } else {
+                        // Pure ACK packet
+                        if (existingConnection != null) {
+                            handleAck(key, tcpHeader, existingConnection)
+                        } else {
+                            logger.verbose(TAG, "ACK packet received for unknown connection: $key")
+                        }
+                    }
+                }
             }
+            
+        } catch (e: Exception) {
+            // Log error with context and continue processing
+            // Requirements: 11.1, 11.2, 11.5
+            logger.error(
+                TAG,
+                "Error handling TCP packet from ${ipHeader.sourceIP}:${ipHeader.destIP}: ${e.message}",
+                e
+            )
+            // Continue processing - don't let one bad packet crash the router
         }
     }
     
@@ -410,7 +427,9 @@ class TCPHandler(
      * 6. Sends a SYN-ACK packet back to TUN
      * 7. Transitions to ESTABLISHED state
      * 
-     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 12.2
+     * On any error, sends RST packet to client and cleans up.
+     * 
+     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 4.5, 11.2, 12.2, 12.4
      * 
      * @param key The connection key (5-tuple)
      * @param tcpHeader The parsed TCP header from the SYN packet
@@ -421,82 +440,100 @@ class TCPHandler(
         tcpHeader: TcpHeader,
         tunOutputStream: FileOutputStream
     ) {
-        logger.info(
-            TAG,
-            "Establishing TCP connection: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}"
-        )
-        
-        // Check if connection already exists
-        val existing = connectionTable.getTcpConnection(key)
-        if (existing != null && existing.state != TcpState.CLOSED) {
-            logger.verbose(TAG, "Connection already exists for $key in state ${existing.state}, ignoring SYN")
-            return
-        }
-        
-        // Initialize sequence numbers
-        // Our initial sequence number (random)
-        val ourSeqNum = kotlin.random.Random.nextLong(0, 0xFFFFFFFF)
-        // Acknowledge their sequence number + 1
-        val theirSeqNum = tcpHeader.sequenceNumber
-        val ourAckNum = (theirSeqNum + 1) and 0xFFFFFFFF
-        
-        // Create a placeholder connection in SYN_SENT state
-        // This is needed because SOCKS5 connection might take time
-        val now = System.currentTimeMillis()
-        val placeholderConnection = TcpConnection(
-            key = key,
-            socksSocket = Socket(), // Placeholder, will be replaced
-            state = TcpState.SYN_SENT,
-            sequenceNumber = ourSeqNum,
-            acknowledgmentNumber = ourAckNum,
-            createdAt = now,
-            lastActivityAt = now,
-            bytesSent = 0,
-            bytesReceived = 0,
-            readerJob = handlerScope.launch { } // Placeholder job
-        )
-        connectionTable.addTcpConnection(placeholderConnection)
-        
-        logger.debug(TAG, "Connection transitioned to SYN_SENT: $key")
-        
-        // Establish SOCKS5 connection
-        val socksSocket = establishSocks5Connection(key) ?: run {
-            logger.error(TAG, "Failed to establish SOCKS5 connection for $key")
+        try {
+            logger.info(
+                TAG,
+                "Establishing TCP connection: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}"
+            )
+            
+            // Check if connection already exists
+            val existing = connectionTable.getTcpConnection(key)
+            if (existing != null && existing.state != TcpState.CLOSED) {
+                logger.verbose(TAG, "Connection already exists for $key in state ${existing.state}, ignoring SYN")
+                return
+            }
+            
+            // Initialize sequence numbers
+            // Our initial sequence number (random)
+            val ourSeqNum = kotlin.random.Random.nextLong(0, 0xFFFFFFFF)
+            // Acknowledge their sequence number + 1
+            val theirSeqNum = tcpHeader.sequenceNumber
+            val ourAckNum = (theirSeqNum + 1) and 0xFFFFFFFF
+            
+            // Create a placeholder connection in SYN_SENT state
+            // This is needed because SOCKS5 connection might take time
+            val now = System.currentTimeMillis()
+            val placeholderConnection = TcpConnection(
+                key = key,
+                socksSocket = Socket(), // Placeholder, will be replaced
+                state = TcpState.SYN_SENT,
+                sequenceNumber = ourSeqNum,
+                acknowledgmentNumber = ourAckNum,
+                createdAt = now,
+                lastActivityAt = now,
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = handlerScope.launch { } // Placeholder job
+            )
+            connectionTable.addTcpConnection(placeholderConnection)
+            
+            logger.debug(TAG, "Connection transitioned to SYN_SENT: $key")
+            
+            // Establish SOCKS5 connection
+            val socksSocket = establishSocks5Connection(key)
+            if (socksSocket == null) {
+                // SOCKS5 connection failed - send RST and clean up
+                // Requirements: 4.5, 11.2
+                logger.error(TAG, "Failed to establish SOCKS5 connection for $key, sending RST")
+                connectionTable.removeTcpConnection(key)
+                sendTcpRst(tunOutputStream, key)
+                return
+            }
+            
+            logger.debug(TAG, "SOCKS5 connection established for $key")
+            
+            // Start connection reader
+            val readerJob = startConnectionReader(key, socksSocket, tunOutputStream, ourSeqNum, ourAckNum)
+            
+            // Update connection to ESTABLISHED state
+            val connection = TcpConnection(
+                key = key,
+                socksSocket = socksSocket,
+                state = TcpState.ESTABLISHED,
+                sequenceNumber = ourSeqNum + 1, // +1 for SYN
+                acknowledgmentNumber = ourAckNum,
+                createdAt = now,
+                lastActivityAt = System.currentTimeMillis(),
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = readerJob
+            )
+            
+            // Add to connection table
+            connectionTable.addTcpConnection(connection)
+            
+            logger.info(
+                TAG,
+                "TCP connection established: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+                "(seq=$ourSeqNum, ack=$ourAckNum, state=ESTABLISHED)"
+            )
+            
+            // Send SYN-ACK back to TUN
+            sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
+            
+        } catch (e: Exception) {
+            // Handle any unexpected errors during connection establishment
+            // Requirements: 11.1, 11.2, 11.5
+            logger.error(TAG, "Error establishing TCP connection for $key: ${e.message}", e)
+            
+            // Clean up and send RST
             connectionTable.removeTcpConnection(key)
-            sendTcpRst(tunOutputStream, key)
-            return
+            try {
+                sendTcpRst(tunOutputStream, key)
+            } catch (rstError: Exception) {
+                logger.error(TAG, "Failed to send RST for $key: ${rstError.message}", rstError)
+            }
         }
-        
-        logger.debug(TAG, "SOCKS5 connection established for $key")
-        
-        // Start connection reader
-        val readerJob = startConnectionReader(key, socksSocket, tunOutputStream, ourSeqNum, ourAckNum)
-        
-        // Update connection to ESTABLISHED state
-        val connection = TcpConnection(
-            key = key,
-            socksSocket = socksSocket,
-            state = TcpState.ESTABLISHED,
-            sequenceNumber = ourSeqNum + 1, // +1 for SYN
-            acknowledgmentNumber = ourAckNum,
-            createdAt = now,
-            lastActivityAt = System.currentTimeMillis(),
-            bytesSent = 0,
-            bytesReceived = 0,
-            readerJob = readerJob
-        )
-        
-        // Add to connection table
-        connectionTable.addTcpConnection(connection)
-        
-        logger.info(
-            TAG,
-            "TCP connection established: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
-            "(seq=$ourSeqNum, ack=$ourAckNum, state=ESTABLISHED)"
-        )
-        
-        // Send SYN-ACK back to TUN
-        sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
     }
     
     /**
@@ -898,6 +935,10 @@ class TCPHandler(
     /**
      * Sends a TCP SYN-ACK packet to the TUN interface.
      * 
+     * Handles TUN interface write errors gracefully.
+     * 
+     * Requirements: 11.3, 11.4
+     * 
      * @param tunOutputStream Output stream to write the packet
      * @param key The connection key
      * @param seqNum Our sequence number
@@ -909,35 +950,51 @@ class TCPHandler(
         seqNum: Long,
         ackNum: Long
     ) {
-        val packet = packetBuilder.buildTcpPacket(
-            sourceIp = key.destIp,
-            sourcePort = key.destPort,
-            destIp = key.sourceIp,
-            destPort = key.sourcePort,
-            sequenceNumber = seqNum,
-            acknowledgmentNumber = ackNum,
-            flags = TcpFlags(
-                fin = false,
-                syn = true,
-                rst = false,
-                psh = false,
-                ack = true,
-                urg = false
-            ),
-            windowSize = 65535,
-            payload = byteArrayOf()
-        )
-        
-        withContext(Dispatchers.IO) {
-            tunOutputStream.write(packet)
-            tunOutputStream.flush()
+        try {
+            val packet = packetBuilder.buildTcpPacket(
+                sourceIp = key.destIp,
+                sourcePort = key.destPort,
+                destIp = key.sourceIp,
+                destPort = key.sourcePort,
+                sequenceNumber = seqNum,
+                acknowledgmentNumber = ackNum,
+                flags = TcpFlags(
+                    fin = false,
+                    syn = true,
+                    rst = false,
+                    psh = false,
+                    ack = true,
+                    urg = false
+                ),
+                windowSize = 65535,
+                payload = byteArrayOf()
+            )
+            
+            withContext(Dispatchers.IO) {
+                tunOutputStream.write(packet)
+                tunOutputStream.flush()
+            }
+            
+            logger.verbose(TAG, "Sent SYN-ACK: $key seq=$seqNum ack=$ackNum")
+            
+        } catch (e: IOException) {
+            // TUN interface write error - log and close connection
+            // Requirements: 11.4
+            logger.error(TAG, "Failed to write SYN-ACK to TUN for $key: ${e.message}", e)
+            // Connection will be cleaned up by caller
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, "Unexpected error sending SYN-ACK for $key: ${e.message}", e)
+            throw e
         }
-        
-        logger.verbose(TAG, "Sent SYN-ACK: $key seq=$seqNum ack=$ackNum")
     }
     
     /**
      * Sends a TCP data packet to the TUN interface.
+     * 
+     * Handles TUN interface write errors gracefully.
+     * 
+     * Requirements: 11.3, 11.4
      * 
      * @param tunOutputStream Output stream to write the packet
      * @param key The connection key
@@ -952,31 +1009,42 @@ class TCPHandler(
         ackNum: Long,
         data: ByteArray
     ) {
-        val packet = packetBuilder.buildTcpPacket(
-            sourceIp = key.destIp,
-            sourcePort = key.destPort,
-            destIp = key.sourceIp,
-            destPort = key.sourcePort,
-            sequenceNumber = seqNum,
-            acknowledgmentNumber = ackNum,
-            flags = TcpFlags(
-                fin = false,
-                syn = false,
-                rst = false,
-                psh = true,
-                ack = true,
-                urg = false
-            ),
-            windowSize = 65535,
-            payload = data
-        )
-        
-        withContext(Dispatchers.IO) {
-            tunOutputStream.write(packet)
-            tunOutputStream.flush()
+        try {
+            val packet = packetBuilder.buildTcpPacket(
+                sourceIp = key.destIp,
+                sourcePort = key.destPort,
+                destIp = key.sourceIp,
+                destPort = key.sourcePort,
+                sequenceNumber = seqNum,
+                acknowledgmentNumber = ackNum,
+                flags = TcpFlags(
+                    fin = false,
+                    syn = false,
+                    rst = false,
+                    psh = true,
+                    ack = true,
+                    urg = false
+                ),
+                windowSize = 65535,
+                payload = data
+            )
+            
+            withContext(Dispatchers.IO) {
+                tunOutputStream.write(packet)
+                tunOutputStream.flush()
+            }
+            
+            logger.verbose(TAG, "Sent data packet: $key seq=$seqNum ack=$ackNum len=${data.size}")
+            
+        } catch (e: IOException) {
+            // TUN interface write error - log and propagate
+            // Requirements: 11.4
+            logger.error(TAG, "Failed to write data packet to TUN for $key: ${e.message}", e)
+            throw e
+        } catch (e: Exception) {
+            logger.error(TAG, "Unexpected error sending data packet for $key: ${e.message}", e)
+            throw e
         }
-        
-        logger.verbose(TAG, "Sent data packet: $key seq=$seqNum ack=$ackNum len=${data.size}")
     }
     
     /**
