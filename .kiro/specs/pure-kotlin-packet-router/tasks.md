@@ -282,6 +282,7 @@
 
 
 
+
   - Implement sendUdpPacket() method
   - Build IP header with swapped source/dest
   - Build UDP header with correct length
@@ -298,7 +299,10 @@
 
 ## Phase 4: PacketRouter Integration
 
-- [ ] 14. Refactor PacketRouter to use new components
+- [x] 14. Refactor PacketRouter to use new components
+
+
+
 
   - Update PacketRouter class to use IPPacketParser
   - Update to use TCPHandler for TCP packets
@@ -308,19 +312,26 @@
   - Remove old stub implementations
   - _Requirements: 1.1, 1.2, 1.3, 1.5_
 
-- [ ] 14.1 Update TunnelVpnService integration
+- [x] 14.1 Update TunnelVpnService integration
+
+
   - Verify TunnelVpnService correctly instantiates refactored PacketRouter
   - Ensure FileInputStream/FileOutputStream are passed correctly
   - Update any service-level error handling
   - Test VPN service lifecycle with new router
 
-- [ ] 14.2 Remove old PacketRouter stub code
+- [x] 14.2 Remove old PacketRouter stub code
+
+
   - Delete old packet routing logic from PacketRouter.kt
   - Remove unused helper methods
   - Clean up any temporary workarounds
   - Verify no references to old implementation remain
+-
 
-- [ ] 15. Implement packet routing main loop
+- [x] 15. Implement packet routing main loop
+
+
 
   - Implement routePackets() method with coroutine
   - Read packets from TUN FileInputStream
@@ -330,7 +341,9 @@
   - Continue processing on errors
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1, 11.2, 11.3, 11.4, 11.5_
 
-- [ ] 15.1 Write integration test for packet routing
+- [x] 15.1 Write integration test for packet routing
+
+
   - Test end-to-end packet flow
   - Test error handling
   - Test multiple concurrent connections
