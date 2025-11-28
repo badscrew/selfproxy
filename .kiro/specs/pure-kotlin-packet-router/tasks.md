@@ -241,6 +241,7 @@
 
 
 
+
   - Create UDPHandler class in androidApp/src/main/kotlin/com/sshtunnel/android/vpn/
   - Implement parseUdpHeader() method
   - Extract source port, dest port, length, checksum
@@ -255,7 +256,8 @@
   - Test payload extraction
   - Test DNS query detection
 
-- [ ] 12. Implement DNS query routing
+- [x] 12. Implement DNS query routing
+
   - Implement handleDnsQuery() method
   - Extract DNS query payload from UDP packet
   - Implement queryDnsThroughSocks5() using DNS-over-TCP
@@ -265,7 +267,10 @@
   - Handle DNS timeout (5 seconds)
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 12.1 Write integration test for DNS routing
+- [x] 12.1 Write integration test for DNS routing
+
+
+
   - Test DNS query through SOCKS5
   - Test DNS response construction
   - Test DNS timeout handling
