@@ -373,6 +373,220 @@ class ConnectionTableTest {
         assertEquals(0, stats.activeTcpConnections)
     }
     
+    @Test
+    fun `cleanup should respect custom timeout values`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val time45SecondsAgo = now - 45_000 // 45 seconds ago
+        val time90SecondsAgo = now - 90_000 // 90 seconds ago
+        
+        val key1 = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val connection1 = createMockTcpConnection(key1, lastActivityAt = time45SecondsAgo)
+        
+        val key2 = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12346,
+            destIp = "1.1.1.1",
+            destPort = 443
+        )
+        val connection2 = createMockTcpConnection(key2, lastActivityAt = time90SecondsAgo)
+        
+        connectionTable.addTcpConnection(connection1)
+        connectionTable.addTcpConnection(connection2)
+        
+        // Act - Use 60 second timeout
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 60_000)
+        
+        // Assert
+        val retrieved1 = connectionTable.getTcpConnection(key1)
+        val retrieved2 = connectionTable.getTcpConnection(key2)
+        
+        assertNotNull(retrieved1) // 45 seconds < 60 second timeout
+        assertNull(retrieved2) // 90 seconds > 60 second timeout
+    }
+    
+    @Test
+    fun `cleanup should handle TIME_WAIT connections with shorter timeout`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val time40SecondsAgo = now - 40_000 // 40 seconds ago
+        
+        val key = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val connection = createMockTcpConnection(
+            key,
+            state = TcpState.TIME_WAIT,
+            lastActivityAt = time40SecondsAgo
+        )
+        
+        connectionTable.addTcpConnection(connection)
+        
+        // Act - TIME_WAIT timeout is 30 seconds by default
+        connectionTable.cleanupIdleConnections(
+            idleTimeoutMs = 120_000,
+            timeWaitTimeoutMs = 30_000
+        )
+        
+        // Assert - Connection should be removed (40 seconds > 30 second TIME_WAIT timeout)
+        val retrieved = connectionTable.getTcpConnection(key)
+        assertNull(retrieved)
+    }
+    
+    @Test
+    fun `cleanup should not remove TIME_WAIT connections within timeout`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val time20SecondsAgo = now - 20_000 // 20 seconds ago
+        
+        val key = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val connection = createMockTcpConnection(
+            key,
+            state = TcpState.TIME_WAIT,
+            lastActivityAt = time20SecondsAgo
+        )
+        
+        connectionTable.addTcpConnection(connection)
+        
+        // Act - TIME_WAIT timeout is 30 seconds
+        connectionTable.cleanupIdleConnections(
+            idleTimeoutMs = 120_000,
+            timeWaitTimeoutMs = 30_000
+        )
+        
+        // Assert - Connection should remain (20 seconds < 30 second TIME_WAIT timeout)
+        val retrieved = connectionTable.getTcpConnection(key)
+        assertNotNull(retrieved)
+    }
+    
+    @Test
+    fun `cleanup should handle mixed TCP and UDP connections`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val oldTime = now - 150_000 // 2.5 minutes ago
+        val recentTime = now - 60_000 // 1 minute ago
+        
+        val oldTcpKey = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val oldTcpConnection = createMockTcpConnection(oldTcpKey, lastActivityAt = oldTime)
+        
+        val recentTcpKey = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12346,
+            destIp = "1.1.1.1",
+            destPort = 443
+        )
+        val recentTcpConnection = createMockTcpConnection(recentTcpKey, lastActivityAt = recentTime)
+        
+        val oldUdpKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "8.8.8.8",
+            destPort = 53
+        )
+        val oldUdpConnection = createMockUdpConnection(oldUdpKey, lastActivityAt = oldTime)
+        
+        val recentUdpKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54322,
+            destIp = "8.8.4.4",
+            destPort = 53
+        )
+        val recentUdpConnection = createMockUdpConnection(recentUdpKey, lastActivityAt = recentTime)
+        
+        connectionTable.addTcpConnection(oldTcpConnection)
+        connectionTable.addTcpConnection(recentTcpConnection)
+        connectionTable.addUdpConnection(oldUdpConnection)
+        connectionTable.addUdpConnection(recentUdpConnection)
+        
+        // Act
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 120_000)
+        
+        // Assert
+        assertNull(connectionTable.getTcpConnection(oldTcpKey))
+        assertNotNull(connectionTable.getTcpConnection(recentTcpKey))
+        assertNull(connectionTable.getUdpConnection(oldUdpKey))
+        assertNotNull(connectionTable.getUdpConnection(recentUdpKey))
+        
+        val stats = connectionTable.getStatistics()
+        assertEquals(1, stats.activeTcpConnections)
+        assertEquals(1, stats.activeUdpConnections)
+    }
+    
+    @Test
+    fun `cleanup should handle empty connection table gracefully`() = runTest {
+        // Act - Cleanup with no connections
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 120_000)
+        
+        // Assert - Should not throw exception
+        val stats = connectionTable.getStatistics()
+        assertEquals(0, stats.activeTcpConnections)
+        assertEquals(0, stats.activeUdpConnections)
+    }
+    
+    @Test
+    fun `cleanup should properly close sockets and cancel jobs`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val oldTime = now - 150_000
+        
+        val key = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val job = Job()
+        val connection = TcpConnection(
+            key = key,
+            socksSocket = createMockSocket(),
+            state = TcpState.ESTABLISHED,
+            sequenceNumber = 1000,
+            acknowledgmentNumber = 2000,
+            createdAt = now,
+            lastActivityAt = oldTime,
+            bytesSent = 0,
+            bytesReceived = 0,
+            readerJob = job
+        )
+        
+        connectionTable.addTcpConnection(connection)
+        
+        // Act
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 120_000)
+        
+        // Assert
+        assertTrue(job.isCancelled)
+        val retrieved = connectionTable.getTcpConnection(key)
+        assertNull(retrieved)
+    }
+    
     // Helper functions
     
     private fun createMockTcpConnection(

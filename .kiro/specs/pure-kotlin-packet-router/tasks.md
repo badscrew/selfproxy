@@ -333,6 +333,7 @@
 
 
 
+
   - Implement routePackets() method with coroutine
   - Read packets from TUN FileInputStream
   - Parse IP header for each packet
@@ -347,8 +348,10 @@
   - Test end-to-end packet flow
   - Test error handling
   - Test multiple concurrent connections
+-
 
-- [ ] 16. Implement connection cleanup
+- [x] 16. Implement connection cleanup
+
 
   - Add periodic cleanup coroutine
   - Check for idle connections every 30 seconds
@@ -356,7 +359,9 @@
   - Clean up resources properly
   - _Requirements: 9.2, 9.3, 9.4, 9.5_
 
-- [ ] 16.1 Write unit tests for connection cleanup
+- [x] 16.1 Write unit tests for connection cleanup
+
+
   - Test idle connection detection
   - Test cleanup timing
   - Test resource release
