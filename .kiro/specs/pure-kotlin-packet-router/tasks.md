@@ -353,6 +353,7 @@
 - [x] 16. Implement connection cleanup
 
 
+
   - Add periodic cleanup coroutine
   - Check for idle connections every 30 seconds
   - Close connections idle for >2 minutes
@@ -365,8 +366,11 @@
   - Test idle connection detection
   - Test cleanup timing
   - Test resource release
+-
 
-- [ ] 17. Implement statistics tracking
+- [x] 17. Implement statistics tracking
+
+
 
   - Track bytes sent/received per connection
   - Track connection duration
@@ -375,7 +379,9 @@
   - Ensure thread-safe access
   - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
 
-- [ ] 17.1 Write unit tests for statistics
+- [x] 17.1 Write unit tests for statistics
+
+
   - Test byte counting
   - Test duration tracking
   - Test statistics aggregation
