@@ -4,6 +4,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
+import com.sshtunnel.logging.Logger
+import com.sshtunnel.logging.LoggerImpl
+
 /**
  * Thread-safe connection table for tracking active TCP and UDP connections
  * 
@@ -12,7 +15,9 @@ import java.util.concurrent.ConcurrentHashMap
  * 
  * Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 13.1, 13.2, 13.3, 13.4, 13.5
  */
-class ConnectionTable {
+class ConnectionTable(
+    private val logger: Logger = LoggerImpl()
+) {
     private val tcpConnections = ConcurrentHashMap<ConnectionKey, TcpConnection>()
     private val udpConnections = ConcurrentHashMap<ConnectionKey, UdpConnection>()
     private val lock = Mutex()
@@ -20,6 +25,10 @@ class ConnectionTable {
     // Statistics tracking
     private var totalTcpConnectionsCreated = 0
     private var totalUdpConnectionsCreated = 0
+    
+    companion object {
+        private const val TAG = "ConnectionTable"
+    }
     
     /**
      * Add a TCP connection to the table
@@ -114,14 +123,15 @@ class ConnectionTable {
      * 
      * @param idleTimeoutMs Idle timeout in milliseconds (default: 120,000 = 2 minutes)
      * @param timeWaitTimeoutMs TIME_WAIT timeout in milliseconds (default: 30,000 = 30 seconds)
-     * Requirements: 9.3, 9.5
+     * Requirements: 9.3, 9.5, 12.3
      */
     suspend fun cleanupIdleConnections(
         idleTimeoutMs: Long = 120_000,
         timeWaitTimeoutMs: Long = 30_000
     ) {
         val now = System.currentTimeMillis()
-        val connectionsToRemove = mutableListOf<ConnectionKey>()
+        val connectionsToRemove = mutableListOf<Pair<ConnectionKey, TcpConnection>>()
+        val udpConnectionsToRemove = mutableListOf<Pair<ConnectionKey, UdpConnection>>()
         
         lock.withLock {
             // Find idle TCP connections or connections in TIME_WAIT
@@ -133,40 +143,65 @@ class ConnectionTable {
                 }
                 
                 if (now - connection.lastActivityAt > timeout) {
-                    connectionsToRemove.add(key)
+                    connectionsToRemove.add(key to connection)
                 }
             }
             
             // Remove idle TCP connections and close sockets
-            connectionsToRemove.forEach { key ->
-                tcpConnections.remove(key)?.let { connection ->
-                    try {
-                        connection.readerJob.cancel()
-                        connection.socksSocket.close()
-                    } catch (e: Exception) {
-                        // Ignore errors during cleanup
-                    }
+            connectionsToRemove.forEach { (key, connection) ->
+                tcpConnections.remove(key)
+                try {
+                    connection.readerJob.cancel()
+                    connection.socksSocket.close()
+                } catch (e: Exception) {
+                    // Ignore errors during cleanup
                 }
+                
+                // Log connection closure with duration
+                val duration = now - connection.createdAt
+                val durationSeconds = duration / 1000.0
+                val reason = if (connection.state == TcpState.TIME_WAIT) "TIME_WAIT_timeout" else "idle_timeout"
+                logger.info(
+                    TAG,
+                    "TCP connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+                    "(reason=$reason, duration=${String.format("%.2f", durationSeconds)}s, " +
+                    "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+                )
             }
-            
-            connectionsToRemove.clear()
             
             // Find idle UDP connections
             udpConnections.forEach { (key, connection) ->
                 if (now - connection.lastActivityAt > idleTimeoutMs) {
-                    connectionsToRemove.add(key)
+                    udpConnectionsToRemove.add(key to connection)
                 }
             }
             
             // Remove idle UDP connections and close sockets
-            connectionsToRemove.forEach { key ->
-                udpConnections.remove(key)?.let { connection ->
-                    try {
-                        connection.socksSocket?.close()
-                    } catch (e: Exception) {
-                        // Ignore errors during cleanup
-                    }
+            udpConnectionsToRemove.forEach { (key, connection) ->
+                udpConnections.remove(key)
+                try {
+                    connection.socksSocket?.close()
+                } catch (e: Exception) {
+                    // Ignore errors during cleanup
                 }
+                
+                // Log UDP connection closure with duration
+                val duration = now - connection.createdAt
+                val durationSeconds = duration / 1000.0
+                logger.info(
+                    TAG,
+                    "UDP connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+                    "(reason=idle_timeout, duration=${String.format("%.2f", durationSeconds)}s, " +
+                    "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+                )
+            }
+            
+            if (connectionsToRemove.isNotEmpty() || udpConnectionsToRemove.isNotEmpty()) {
+                logger.debug(
+                    TAG,
+                    "Cleaned up ${connectionsToRemove.size} idle TCP connections and " +
+                    "${udpConnectionsToRemove.size} idle UDP connections"
+                )
             }
         }
     }

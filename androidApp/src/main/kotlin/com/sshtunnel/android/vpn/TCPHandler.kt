@@ -410,7 +410,7 @@ class TCPHandler(
      * 6. Sends a SYN-ACK packet back to TUN
      * 7. Transitions to ESTABLISHED state
      * 
-     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4
+     * Requirements: 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 12.2
      * 
      * @param key The connection key (5-tuple)
      * @param tcpHeader The parsed TCP header from the SYN packet
@@ -421,7 +421,10 @@ class TCPHandler(
         tcpHeader: TcpHeader,
         tunOutputStream: FileOutputStream
     ) {
-        logger.debug(TAG, "Handling SYN for new connection: $key")
+        logger.info(
+            TAG,
+            "Establishing TCP connection: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}"
+        )
         
         // Check if connection already exists
         val existing = connectionTable.getTcpConnection(key)
@@ -486,7 +489,11 @@ class TCPHandler(
         // Add to connection table
         connectionTable.addTcpConnection(connection)
         
-        logger.info(TAG, "TCP connection transitioned to ESTABLISHED: $key")
+        logger.info(
+            TAG,
+            "TCP connection established: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+            "(seq=$ourSeqNum, ack=$ourAckNum, state=ESTABLISHED)"
+        )
         
         // Send SYN-ACK back to TUN
         sendTcpSynAck(tunOutputStream, key, ourSeqNum, ourAckNum)
@@ -502,7 +509,7 @@ class TCPHandler(
      * 4. Updates sequence numbers
      * 5. Updates statistics (bytes sent)
      * 
-     * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 13.1
+     * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 13.1, 12.5
      * 
      * @param key The connection key (5-tuple)
      * @param tcpHeader The parsed TCP header
@@ -525,6 +532,7 @@ class TCPHandler(
             return
         }
         
+        // Log data forwarding (NEVER log payload content for privacy - only size)
         logger.verbose(TAG, "Forwarding ${payload.size} bytes from TUN to SOCKS5: $key")
         
         try {
@@ -629,7 +637,7 @@ class TCPHandler(
                 } catch (e: Exception) {
                     logger.error(TAG, "Error handling FIN for $key: ${e.message}", e)
                     // Clean up on error
-                    cleanupConnection(key, connection)
+                    cleanupConnection(key, connection, "error")
                 }
             }
             
@@ -669,8 +677,7 @@ class TCPHandler(
                 // Clean up after a short delay (simplified TIME_WAIT)
                 handlerScope.launch {
                     kotlinx.coroutines.delay(1000) // 1 second instead of 2*MSL
-                    cleanupConnection(key, connection)
-                    logger.debug(TAG, "Connection cleaned up after TIME_WAIT: $key")
+                    cleanupConnection(key, connection, "FIN")
                 }
             }
             
@@ -683,10 +690,17 @@ class TCPHandler(
     /**
      * Cleans up a connection by removing it from the table and closing resources.
      * 
+     * Requirements: 12.3
+     * 
      * @param key The connection key
      * @param connection The connection to clean up
+     * @param reason The reason for closure (e.g., "FIN", "RST", "timeout", "error")
      */
-    private suspend fun cleanupConnection(key: ConnectionKey, connection: TcpConnection) {
+    private suspend fun cleanupConnection(
+        key: ConnectionKey,
+        connection: TcpConnection,
+        reason: String = "normal"
+    ) {
         connectionTable.removeTcpConnection(key)
         
         try {
@@ -696,7 +710,16 @@ class TCPHandler(
             logger.verbose(TAG, "Error closing connection resources for $key: ${e.message}")
         }
         
-        logger.debug(TAG, "Connection cleaned up: $key")
+        // Calculate connection duration
+        val duration = System.currentTimeMillis() - connection.createdAt
+        val durationSeconds = duration / 1000.0
+        
+        logger.info(
+            TAG,
+            "TCP connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+            "(reason=$reason, duration=${String.format("%.2f", durationSeconds)}s, " +
+            "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+        )
     }
     
     /**
@@ -710,7 +733,7 @@ class TCPHandler(
      * 
      * No response packet is sent for RST (RST is not acknowledged).
      * 
-     * Requirements: 3.4, 9.2
+     * Requirements: 3.4, 9.2, 12.3
      * 
      * @param key The connection key (5-tuple)
      * @param tunOutputStream Output stream (not used for RST, but kept for consistency)
@@ -728,6 +751,10 @@ class TCPHandler(
             return
         }
         
+        // Calculate connection duration
+        val duration = System.currentTimeMillis() - connection.createdAt
+        val durationSeconds = duration / 1000.0
+        
         // Close SOCKS5 socket immediately
         try {
             connection.readerJob.cancel()
@@ -736,7 +763,12 @@ class TCPHandler(
             logger.verbose(TAG, "Error closing connection for RST $key: ${e.message}")
         }
         
-        logger.info(TAG, "Connection reset: $key")
+        logger.info(
+            TAG,
+            "TCP connection reset: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+            "(reason=RST, duration=${String.format("%.2f", durationSeconds)}s, " +
+            "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+        )
     }
     
     /**
@@ -775,6 +807,8 @@ class TCPHandler(
      * This coroutine runs for the lifetime of the connection, reading data from
      * the SOCKS5 proxy and constructing TCP packets to send back through the TUN interface.
      * 
+     * Requirements: 12.5
+     * 
      * @param key The connection key
      * @param socket The SOCKS5 socket
      * @param tunOutputStream Output stream to write response packets
@@ -807,7 +841,9 @@ class TCPHandler(
                         break
                     }
                     
+                    // Copy data (NEVER log payload content for privacy - only size)
                     val data = buffer.copyOf(bytesRead)
+                    logger.verbose(TAG, "Received $bytesRead bytes from SOCKS5 for $key")
                     
                     // Send data packet to TUN
                     sendTcpDataPacket(
@@ -835,13 +871,26 @@ class TCPHandler(
                 logger.verbose(TAG, "Connection reader error for $key: ${e.message}")
             } finally {
                 // Clean up connection
-                connectionTable.removeTcpConnection(key)
+                val connection = connectionTable.removeTcpConnection(key)
                 try {
                     socket.close()
                 } catch (e: Exception) {
                     // Ignore
                 }
-                logger.debug(TAG, "Connection reader stopped for $key")
+                
+                // Log connection closure with duration
+                if (connection != null) {
+                    val duration = System.currentTimeMillis() - connection.createdAt
+                    val durationSeconds = duration / 1000.0
+                    logger.info(
+                        TAG,
+                        "TCP connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+                        "(reason=remote_close, duration=${String.format("%.2f", durationSeconds)}s, " +
+                        "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+                    )
+                } else {
+                    logger.debug(TAG, "Connection reader stopped for $key")
+                }
             }
         }
     }

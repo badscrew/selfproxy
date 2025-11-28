@@ -210,7 +210,7 @@ class UDPHandler(
      * @param dnsPayload The DNS query payload
      * @param tunOutputStream Output stream to write response packets
      * 
-     * Requirements: 7.1, 7.2, 7.3, 7.4, 7.5
+     * Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 12.1, 12.5
      */
     private suspend fun handleDnsQuery(
         sourceIp: String,
@@ -221,13 +221,17 @@ class UDPHandler(
         tunOutputStream: FileOutputStream
     ) {
         try {
-            logger.debug(TAG, "Handling DNS query: $sourceIp:$sourcePort -> $destIp:$destPort")
+            // Log DNS query (NEVER log payload content for privacy - only size)
+            logger.info(
+                TAG,
+                "DNS query: $sourceIp:$sourcePort -> $destIp:$destPort (query size: ${dnsPayload.size} bytes)"
+            )
             
             // Query DNS through SOCKS5 using DNS-over-TCP
             val dnsResponse = queryDnsThroughSocks5(destIp, destPort, dnsPayload)
             
             if (dnsResponse != null) {
-                logger.debug(TAG, "DNS query successful, response size: ${dnsResponse.size} bytes")
+                logger.info(TAG, "DNS query successful: response size ${dnsResponse.size} bytes")
                 
                 // Send UDP response packet back to TUN interface
                 // Note: source and dest are swapped for the response
@@ -240,7 +244,7 @@ class UDPHandler(
                     payload = dnsResponse
                 )
             } else {
-                logger.warn(TAG, "DNS query failed or timed out")
+                logger.warn(TAG, "DNS query failed or timed out for $destIp:$destPort")
             }
             
         } catch (e: Exception) {

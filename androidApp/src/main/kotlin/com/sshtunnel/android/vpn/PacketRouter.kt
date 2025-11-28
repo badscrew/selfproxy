@@ -27,7 +27,7 @@ class PacketRouter(
     private val logger: Logger = LoggerImpl()
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val connectionTable = ConnectionTable()
+    private val connectionTable = ConnectionTable(logger)
     private val tcpHandler = TCPHandler(socksPort, connectionTable, logger)
     private val udpHandler = UDPHandler(socksPort, connectionTable, logger)
     
@@ -161,7 +161,7 @@ class PacketRouter(
      * Parses the IP header and dispatches to the appropriate protocol handler.
      * Handles errors gracefully to prevent one bad packet from crashing the router.
      * 
-     * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1, 11.2, 11.3, 11.4, 11.5
+     * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1, 11.2, 11.3, 11.4, 11.5, 12.1, 12.5
      */
     private suspend fun processPacket(packet: ByteArray) {
         try {
@@ -169,15 +169,16 @@ class PacketRouter(
             val ipHeader = IPPacketParser.parseIPv4Header(packet)
             
             if (ipHeader == null) {
-                logger.verbose(TAG, "Failed to parse IP header, dropping packet")
+                logger.verbose(TAG, "Failed to parse IP header, dropping packet (size=${packet.size} bytes)")
                 return
             }
             
-            // Log packet reception in verbose mode
+            // Log packet reception in verbose mode (NEVER log payload data for privacy)
             logger.verbose(
                 TAG,
-                "Received packet: ${ipHeader.sourceIP} -> ${ipHeader.destIP}, " +
-                "protocol=${ipHeader.protocol}, length=${ipHeader.totalLength}"
+                "Received IP packet: ${ipHeader.sourceIP} -> ${ipHeader.destIP}, " +
+                "protocol=${ipHeader.protocol}, length=${ipHeader.totalLength} bytes, " +
+                "ttl=${ipHeader.ttl}, id=${ipHeader.identification}"
             )
             
             // Dispatch to appropriate protocol handler
