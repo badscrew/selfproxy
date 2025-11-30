@@ -841,7 +841,7 @@ class UDPHandler(
                 return null
             }
             
-            logger.info(TAG, "UDP ASSOCIATE handshake successful: relay endpoint $relayAddress:$relayPort")
+            logger.debug(TAG, "UDP ASSOCIATE handshake successful: relay endpoint $relayAddress:$relayPort")
             
             return UdpRelayEndpoint(
                 address = relayAddress ?: "0.0.0.0",
@@ -902,7 +902,7 @@ class UDPHandler(
                 return@withContext null
             }
             
-            logger.info(
+            logger.debug(
                 TAG,
                 "UDP ASSOCIATE handshake successful: relay endpoint ${relayEndpoint.address}:${relayEndpoint.port}"
             )

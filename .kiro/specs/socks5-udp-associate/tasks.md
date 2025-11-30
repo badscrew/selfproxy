@@ -231,6 +231,7 @@
 
 
 
+
   - Ensure bytesSent is updated on each send
   - Ensure bytesReceived is updated on each receive
   - Include UDP ASSOCIATE connections in getStatistics()
@@ -248,7 +249,11 @@
   - Receive known number of bytes
   - Verify bytesReceived counter matches
 
-- [ ] 14. Add comprehensive logging
+- [x] 14. Add comprehensive logging
+
+
+
+
   - Log UDP ASSOCIATE connection establishment (INFO level)
   - Log relay endpoint details (DEBUG level)
   - Log packet encapsulation/decapsulation (VERBOSE level)
