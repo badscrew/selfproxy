@@ -209,6 +209,7 @@
 
 
 
+
   - Wrap all UDP ASSOCIATE operations in try-catch
   - Log specific error messages for each SOCKS5 error code
   - Ensure errors in one connection don't affect others
@@ -224,8 +225,11 @@
   - Create multiple UDP ASSOCIATE connections
   - Simulate failure in one connection
   - Verify other connections continue working normally
+-
 
-- [ ] 13. Update statistics tracking
+- [x] 13. Update statistics tracking
+
+
 
   - Ensure bytesSent is updated on each send
   - Ensure bytesReceived is updated on each receive
@@ -234,7 +238,9 @@
   - Log connection statistics on cleanup
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-- [ ] 13.1 Write property test for statistics accuracy
+- [x] 13.1 Write property test for statistics accuracy
+
+
   - **Property 8: Statistics Accuracy**
   - **Validates: Requirements 9.1, 9.2, 9.3, 9.4**
   - Send known number of bytes through connection
