@@ -1018,6 +1018,193 @@ class UDPHandler(
     }
     
     /**
+     * Starts a coroutine to read responses from the UDP relay socket.
+     * 
+     * This coroutine:
+     * 1. Launches in IO dispatcher for non-blocking I/O
+     * 2. Creates receive buffer (max UDP size: 65507 bytes)
+     * 3. Continuously reads datagrams from relay socket with timeout
+     * 4. Decapsulates received packets to extract source and payload
+     * 5. Builds IP+UDP response packets with swapped addresses
+     * 6. Writes response packets to TUN interface
+     * 7. Updates connection statistics (bytesReceived)
+     * 8. Handles timeout and IOException gracefully
+     * 9. Cleans up connection on error or cancellation
+     * 
+     * The reader coroutine runs for the lifetime of the UDP ASSOCIATE connection.
+     * It terminates when:
+     * - The connection is explicitly closed
+     * - A fatal error occurs
+     * - The coroutine is cancelled
+     * 
+     * Requirements: 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 9.2
+     * 
+     * @param key ConnectionKey identifying this UDP flow
+     * @param connection The UDP ASSOCIATE connection to read from
+     * @param tunOutputStream Output stream to write response packets
+     * @return Job representing the reader coroutine
+     */
+    private fun startUdpReader(
+        key: ConnectionKey,
+        connection: UdpAssociateConnection,
+        tunOutputStream: FileOutputStream
+    ): kotlinx.coroutines.Job {
+        return kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            // Step 2: Create receive buffer (max UDP size: 65507 bytes)
+            // Max UDP datagram size = 65535 (max IP packet) - 20 (IP header) - 8 (UDP header)
+            val maxUdpSize = 65507
+            val receiveBuffer = ByteArray(maxUdpSize)
+            val datagramPacket = java.net.DatagramPacket(receiveBuffer, receiveBuffer.size)
+            
+            logger.info(
+                TAG,
+                "Started UDP reader for ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}"
+            )
+            
+            try {
+                // Step 3: Loop: receive datagram from relay socket with timeout
+                while (kotlinx.coroutines.isActive) {
+                    try {
+                        // Receive datagram from relay socket
+                        // Socket timeout is already set in establishUdpAssociate()
+                        connection.relaySocket.receive(datagramPacket)
+                        
+                        val receivedData = datagramPacket.data.copyOfRange(0, datagramPacket.length)
+                        
+                        logger.verbose(
+                            TAG,
+                            "Received UDP datagram from relay: ${receivedData.size} bytes"
+                        )
+                        
+                        // Step 4: Decapsulate received packet to extract source and payload
+                        val decapsulated = decapsulateUdpPacket(receivedData)
+                        
+                        if (decapsulated == null) {
+                            logger.warn(TAG, "Failed to decapsulate UDP packet, dropping")
+                            continue
+                        }
+                        
+                        logger.verbose(
+                            TAG,
+                            "Decapsulated UDP packet: ${decapsulated.sourceIp}:${decapsulated.sourcePort}, " +
+                            "payload size: ${decapsulated.payload.size}"
+                        )
+                        
+                        // Step 5: Build IP+UDP response packet with swapped addresses
+                        // Original packet: client -> destination
+                        // Response packet: destination -> client
+                        // So we swap: destination becomes source, client becomes destination
+                        val responsePacket = packetBuilder.buildUdpPacket(
+                            sourceIp = decapsulated.sourceIp,      // Destination becomes source
+                            sourcePort = decapsulated.sourcePort,  // Destination port
+                            destIp = key.sourceIp,                 // Client becomes destination
+                            destPort = key.sourcePort,             // Client port
+                            payload = decapsulated.payload
+                        )
+                        
+                        logger.verbose(
+                            TAG,
+                            "Built response packet: ${decapsulated.sourceIp}:${decapsulated.sourcePort} -> " +
+                            "${key.sourceIp}:${key.sourcePort}, size: ${responsePacket.size}"
+                        )
+                        
+                        // Step 6: Write response packet to TUN interface
+                        withContext(Dispatchers.IO) {
+                            tunOutputStream.write(responsePacket)
+                            tunOutputStream.flush()
+                        }
+                        
+                        logger.verbose(
+                            TAG,
+                            "Wrote response packet to TUN interface: ${responsePacket.size} bytes"
+                        )
+                        
+                        // Step 7: Update connection statistics (bytesReceived)
+                        connection.bytesReceived += receivedData.size
+                        connection.lastActivityAt = System.currentTimeMillis()
+                        
+                        // Update statistics in ConnectionTable
+                        connectionTable.updateUdpAssociateStats(
+                            key = key,
+                            bytesReceived = receivedData.size.toLong()
+                        )
+                        
+                        logger.debug(
+                            TAG,
+                            "UDP response processed: ${receivedData.size} bytes received, " +
+                            "total received: ${connection.bytesReceived} bytes"
+                        )
+                        
+                    } catch (e: java.net.SocketTimeoutException) {
+                        // Step 8: Handle timeout
+                        // Timeout is expected - just continue the loop
+                        // This allows the coroutine to check isActive and handle cancellation
+                        logger.verbose(TAG, "UDP relay socket timeout, continuing...")
+                        continue
+                        
+                    } catch (e: IOException) {
+                        // Step 8: Handle IOException
+                        // Socket error - connection may be broken
+                        if (kotlinx.coroutines.isActive) {
+                            logger.error(
+                                TAG,
+                                "IOException reading from UDP relay socket: ${e.message}",
+                                e
+                            )
+                            // Break the loop - connection is broken
+                            break
+                        } else {
+                            // Coroutine was cancelled - this is expected
+                            logger.debug(TAG, "UDP reader cancelled, stopping")
+                            break
+                        }
+                    }
+                }
+                
+            } catch (e: Exception) {
+                // Unexpected error - log and exit
+                logger.error(
+                    TAG,
+                    "Unexpected error in UDP reader: ${e.message}",
+                    e
+                )
+                
+            } finally {
+                // Step 9: Clean up connection on error or cancellation
+                logger.info(
+                    TAG,
+                    "UDP reader stopping for ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}, " +
+                    "sent: ${connection.bytesSent} bytes, received: ${connection.bytesReceived} bytes"
+                )
+                
+                // Close sockets
+                try {
+                    connection.relaySocket.close()
+                    logger.debug(TAG, "Closed UDP relay socket")
+                } catch (e: Exception) {
+                    logger.verbose(TAG, "Error closing relay socket: ${e.message}")
+                }
+                
+                try {
+                    connection.controlSocket.close()
+                    logger.debug(TAG, "Closed TCP control socket")
+                } catch (e: Exception) {
+                    logger.verbose(TAG, "Error closing control socket: ${e.message}")
+                }
+                
+                // Remove connection from table
+                connectionTable.removeUdpAssociateConnection(key)
+                
+                logger.info(
+                    TAG,
+                    "UDP ASSOCIATE connection cleaned up: ${key.sourceIp}:${key.sourcePort} -> " +
+                    "${key.destIp}:${key.destPort}"
+                )
+            }
+        }
+    }
+    
+    /**
      * Sends a UDP packet back to the TUN interface.
      * 
      * This method:

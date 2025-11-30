@@ -118,6 +118,7 @@
 
 
 
+
   - Encapsulate UDP packet with SOCKS5 header
   - Create DatagramPacket with encapsulated data
   - Set destination to relay endpoint (BND.ADDR:BND.PORT)
@@ -127,7 +128,11 @@
   - Handle IOException gracefully
   - _Requirements: 3.5, 5.1, 9.1, 9.4_
 
-- [ ] 8. Implement startUdpReader() coroutine
+- [x] 8. Implement startUdpReader() coroutine
+
+
+
+
 
   - Launch coroutine in IO dispatcher
   - Create receive buffer (max UDP size: 65507 bytes)
