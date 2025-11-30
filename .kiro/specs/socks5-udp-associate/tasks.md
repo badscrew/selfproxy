@@ -175,13 +175,17 @@
 
 
 
+
   - Modify existing handleUdpPacket() method
   - Keep existing DNS handling (isDnsQuery check)
   - Add else branch to call handleGenericUdpPacket() for non-DNS
   - Remove TODO comment about UDP ASSOCIATE
   - _Requirements: 1.1, 8.1, 8.2_
 
-- [ ] 11. Enhance connection cleanup for UDP ASSOCIATE
+- [x] 11. Enhance connection cleanup for UDP ASSOCIATE
+
+
+
   - Update ConnectionTable.cleanupIdleConnections()
   - Iterate through UDP ASSOCIATE connections
   - Check lastActivityAt against idle timeout (2 minutes)
@@ -189,7 +193,9 @@
   - Log connection closure with duration and statistics
   - _Requirements: 2.2, 2.3, 7.4, 9.4_
 
-- [ ] 11.1 Write property test for connection cleanup
+- [x] 11.1 Write property test for connection cleanup
+
+
   - **Property 6: Connection Cleanup Completeness**
   - **Validates: Requirements 2.2, 2.3, 5.4, 7.4**
   - Create connections with old lastActivityAt timestamps
