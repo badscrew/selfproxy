@@ -1,5 +1,9 @@
 # SSH Tunnel Proxy
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.21-purple.svg)](https://kotlinlang.org/)
+[![Android](https://img.shields.io/badge/Android-API%2026+-green.svg)](https://developer.android.com/)
+
 A mobile application (initially Android, with future iOS support planned) that enables users to route their mobile device's internet traffic through their own SSH servers using SOCKS5 proxy tunneling.
 
 ## Project Structure
@@ -95,8 +99,39 @@ See the [design document](.kiro/specs/ssh-tunnel-proxy/design.md) for detailed a
 
 ## License
 
-[To be determined]
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+### Why Apache 2.0?
+
+We chose Apache 2.0 because:
+- It matches the license of most dependencies (Kotlin, AndroidX, Ktor, SQLDelight)
+- Provides explicit patent protection for users and contributors
+- Allows commercial use and modification
+- Is the industry standard for Android/Kotlin open source projects
+- Is well-understood by corporations and legal teams
+
+### Third-Party Licenses
+
+This project uses several open source libraries. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for a complete list of dependencies and their licenses.
 
 ## Contributing
 
-[To be determined]
+Contributions are welcome! This project is in active development.
+
+### How to Contribute
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`./gradlew test`)
+5. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+### Code of Conduct
+
+Please be respectful and constructive in all interactions. We aim to maintain a welcoming and inclusive community.
+
+### License Agreement
+
+By contributing to this project, you agree that your contributions will be licensed under the Apache License 2.0.
