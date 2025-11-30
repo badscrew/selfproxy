@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.DatagramSocket
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -725,6 +726,103 @@ class UDPHandler(
         } catch (e: Exception) {
             logger.error(TAG, "UDP ASSOCIATE handshake error: ${e.message}", e)
             return null
+        }
+    }
+    
+    /**
+     * Establishes a SOCKS5 UDP ASSOCIATE connection.
+     * 
+     * This method:
+     * 1. Creates TCP control socket to SOCKS5 proxy
+     * 2. Performs initial SOCKS5 greeting (VER=0x05, NMETHODS=0x01, METHOD=0x00)
+     * 3. Calls performUdpAssociateHandshake() to get relay endpoint
+     * 4. Creates DatagramSocket for UDP relay communication
+     * 5. Creates UdpAssociateConnection object
+     * 6. Adds connection to ConnectionTable
+     * 
+     * The TCP control socket must remain open for the lifetime of the UDP association.
+     * Closing the control socket will terminate the UDP relay.
+     * 
+     * @param key ConnectionKey identifying this UDP flow
+     * @return UdpAssociateConnection or null on failure
+     * 
+     * Requirements: 1.1, 1.2, 1.3, 1.4, 2.1
+     */
+    private suspend fun establishUdpAssociate(
+        key: ConnectionKey
+    ): UdpAssociateConnection? = withContext(Dispatchers.IO) {
+        var controlSocket: Socket? = null
+        var relaySocket: DatagramSocket? = null
+        
+        try {
+            logger.info(
+                TAG,
+                "Establishing UDP ASSOCIATE for ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort}"
+            )
+            
+            // Step 1: Create TCP control socket to SOCKS5 proxy
+            controlSocket = Socket()
+            controlSocket.connect(InetSocketAddress("127.0.0.1", socksPort), DNS_TIMEOUT_MS)
+            controlSocket.soTimeout = DNS_TIMEOUT_MS
+            
+            logger.debug(TAG, "Connected to SOCKS5 proxy at 127.0.0.1:$socksPort")
+            
+            // Step 2 & 3: Perform UDP ASSOCIATE handshake to get relay endpoint
+            // This includes the initial SOCKS5 greeting (VER=0x05, NMETHODS=0x01, METHOD=0x00)
+            val relayEndpoint = performUdpAssociateHandshake(controlSocket)
+            
+            if (relayEndpoint == null) {
+                logger.error(TAG, "UDP ASSOCIATE handshake failed")
+                controlSocket.close()
+                return@withContext null
+            }
+            
+            logger.info(
+                TAG,
+                "UDP ASSOCIATE handshake successful: relay endpoint ${relayEndpoint.address}:${relayEndpoint.port}"
+            )
+            
+            // Step 4: Create DatagramSocket for UDP relay communication
+            relaySocket = DatagramSocket()
+            relaySocket.soTimeout = DNS_TIMEOUT_MS
+            
+            logger.debug(TAG, "Created UDP relay socket on local port ${relaySocket.localPort}")
+            
+            // Step 5: Create UdpAssociateConnection object
+            val now = System.currentTimeMillis()
+            val connection = UdpAssociateConnection(
+                key = key,
+                controlSocket = controlSocket,
+                relaySocket = relaySocket,
+                relayEndpoint = relayEndpoint,
+                createdAt = now,
+                lastActivityAt = now,
+                bytesSent = 0,
+                bytesReceived = 0,
+                readerJob = kotlinx.coroutines.Job() // Placeholder, will be replaced by startUdpReader
+            )
+            
+            // Step 6: Add connection to ConnectionTable
+            connectionTable.addUdpAssociateConnection(connection)
+            
+            logger.info(
+                TAG,
+                "UDP ASSOCIATE connection established: ${key.sourceIp}:${key.sourcePort} -> " +
+                "${key.destIp}:${key.destPort} via relay ${relayEndpoint.address}:${relayEndpoint.port}"
+            )
+            
+            return@withContext connection
+            
+        } catch (e: java.net.SocketTimeoutException) {
+            logger.error(TAG, "UDP ASSOCIATE connection timed out: ${e.message}")
+            controlSocket?.close()
+            relaySocket?.close()
+            return@withContext null
+        } catch (e: Exception) {
+            logger.error(TAG, "Failed to establish UDP ASSOCIATE: ${e.message}", e)
+            controlSocket?.close()
+            relaySocket?.close()
+            return@withContext null
         }
     }
     

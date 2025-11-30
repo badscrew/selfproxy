@@ -92,13 +92,17 @@
 - [x] 5.1 Write property test for UDP decapsulation
 
 
+
   - **Property 3: UDP Decapsulation Correctness**
   - **Validates: Requirements 4.1, 4.2, 4.3**
   - Generate random SOCKS5 UDP packets
   - Verify decapsulation correctly extracts source address, port, and payload
   - Test round-trip: encapsulate then decapsulate should preserve data
 
-- [ ] 6. Implement establishUdpAssociate() method
+
+- [x] 6. Implement establishUdpAssociate() method
+
+
 
   - Create TCP control socket to SOCKS5 proxy
   - Perform initial SOCKS5 greeting (VER=0x05, NMETHODS=0x01, METHOD=0x00)
