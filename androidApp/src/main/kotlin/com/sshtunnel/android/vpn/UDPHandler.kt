@@ -920,6 +920,104 @@ class UDPHandler(
     }
     
     /**
+     * Sends a UDP datagram through the SOCKS5 relay.
+     * 
+     * This method:
+     * 1. Encapsulates the UDP packet with SOCKS5 header
+     * 2. Creates a DatagramPacket with the encapsulated data
+     * 3. Sets destination to the relay endpoint (BND.ADDR:BND.PORT)
+     * 4. Sends the datagram through the relay socket
+     * 5. Updates connection statistics (bytesSent)
+     * 6. Updates lastActivityAt timestamp
+     * 
+     * Handles IOException gracefully to ensure one failed send doesn't crash the router.
+     * 
+     * Requirements: 3.5, 5.1, 9.1, 9.4
+     * 
+     * @param connection The UDP ASSOCIATE connection to use
+     * @param destIp Destination IP address
+     * @param destPort Destination port
+     * @param payload Original UDP payload
+     */
+    private suspend fun sendUdpThroughSocks5(
+        connection: UdpAssociateConnection,
+        destIp: String,
+        destPort: Int,
+        payload: ByteArray
+    ) = withContext(Dispatchers.IO) {
+        try {
+            logger.verbose(
+                TAG,
+                "Sending UDP through SOCKS5: $destIp:$destPort, payload size: ${payload.size}"
+            )
+            
+            // Step 1: Encapsulate UDP packet with SOCKS5 header
+            val encapsulatedData = encapsulateUdpPacket(destIp, destPort, payload)
+            
+            logger.verbose(
+                TAG,
+                "Encapsulated packet size: ${encapsulatedData.size} bytes " +
+                "(header: ${encapsulatedData.size - payload.size}, payload: ${payload.size})"
+            )
+            
+            // Step 2 & 3: Create DatagramPacket with destination set to relay endpoint
+            val relayAddress = java.net.InetAddress.getByName(connection.relayEndpoint.address)
+            val datagramPacket = java.net.DatagramPacket(
+                encapsulatedData,
+                encapsulatedData.size,
+                relayAddress,
+                connection.relayEndpoint.port
+            )
+            
+            // Step 4: Send datagram through relay socket
+            connection.relaySocket.send(datagramPacket)
+            
+            logger.verbose(
+                TAG,
+                "Sent UDP datagram to relay endpoint ${connection.relayEndpoint.address}:${connection.relayEndpoint.port}"
+            )
+            
+            // Step 5: Update connection statistics (bytesSent)
+            // Count the encapsulated data size (includes SOCKS5 header + payload)
+            connection.bytesSent += encapsulatedData.size
+            
+            // Step 6: Update lastActivityAt timestamp
+            connection.lastActivityAt = System.currentTimeMillis()
+            
+            // Update statistics in ConnectionTable
+            connectionTable.updateUdpAssociateStats(
+                key = connection.key,
+                bytesSent = encapsulatedData.size.toLong()
+            )
+            
+            logger.debug(
+                TAG,
+                "UDP packet sent successfully: ${encapsulatedData.size} bytes, " +
+                "total sent: ${connection.bytesSent} bytes"
+            )
+            
+        } catch (e: IOException) {
+            // Handle IOException gracefully - log and continue
+            // Requirements: 3.5, 5.1
+            logger.error(
+                TAG,
+                "Failed to send UDP datagram through SOCKS5 relay: ${e.message}",
+                e
+            )
+            // Don't throw - UDP is best-effort, continue processing
+            // The connection may be broken, but we'll let the cleanup mechanism handle it
+        } catch (e: Exception) {
+            // Handle any other unexpected errors
+            logger.error(
+                TAG,
+                "Unexpected error sending UDP through SOCKS5: ${e.message}",
+                e
+            )
+            // Don't throw - continue processing other packets
+        }
+    }
+    
+    /**
      * Sends a UDP packet back to the TUN interface.
      * 
      * This method:

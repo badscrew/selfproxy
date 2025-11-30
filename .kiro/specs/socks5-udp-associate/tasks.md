@@ -104,6 +104,7 @@
 
 
 
+
   - Create TCP control socket to SOCKS5 proxy
   - Perform initial SOCKS5 greeting (VER=0x05, NMETHODS=0x01, METHOD=0x00)
   - Call performUdpAssociateHandshake() to get relay endpoint
@@ -113,7 +114,9 @@
   - Return connection or null on failure
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1_
 
-- [ ] 7. Implement sendUdpThroughSocks5() method
+- [x] 7. Implement sendUdpThroughSocks5() method
+
+
 
   - Encapsulate UDP packet with SOCKS5 header
   - Create DatagramPacket with encapsulated data
