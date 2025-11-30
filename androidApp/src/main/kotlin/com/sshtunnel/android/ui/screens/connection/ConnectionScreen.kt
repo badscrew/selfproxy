@@ -70,6 +70,38 @@ fun ConnectionScreen(
         profileId?.let { viewModel.setProfile(it) }
     }
     
+    // Listen for VPN state broadcasts
+    DisposableEffect(Unit) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                when (intent?.action) {
+                    "com.sshtunnel.android.vpn.STARTED" -> {
+                        viewModel.onVpnStarted()
+                    }
+                    "com.sshtunnel.android.vpn.STOPPED" -> {
+                        viewModel.onVpnStopped()
+                    }
+                    "com.sshtunnel.android.vpn.ERROR" -> {
+                        val errorMessage = intent.getStringExtra("error_message") ?: "Unknown VPN error"
+                        viewModel.onVpnError(errorMessage)
+                    }
+                }
+            }
+        }
+        
+        val filter = android.content.IntentFilter().apply {
+            addAction("com.sshtunnel.android.vpn.STARTED")
+            addAction("com.sshtunnel.android.vpn.STOPPED")
+            addAction("com.sshtunnel.android.vpn.ERROR")
+        }
+        
+        context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -103,6 +135,14 @@ fun ConnectionScreen(
                 is ConnectionUiState.Connecting -> {
                     ConnectingContent(
                         profile = state.profile
+                    )
+                }
+                
+                is ConnectionUiState.WaitingForVpn -> {
+                    WaitingForVpnContent(
+                        connection = state.connection,
+                        profile = state.profile,
+                        onDisconnect = { viewModel.disconnect() }
                     )
                 }
                 
@@ -216,6 +256,59 @@ private fun ConnectingContent(
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+/**
+ * Content shown while waiting for VPN to start.
+ */
+@Composable
+private fun WaitingForVpnContent(
+    connection: Connection,
+    profile: ServerProfile?,
+    onDisconnect: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(48.dp))
+        
+        CircularProgressIndicator(
+            modifier = Modifier.size(80.dp)
+        )
+        
+        Text(
+            text = "Starting VPN...",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
+        )
+        
+        Text(
+            text = "SSH tunnel established, activating VPN",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        profile?.let {
+            Text(
+                text = "${it.username}@${it.hostname}:${it.port}",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        OutlinedButton(
+            onClick = onDisconnect,
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text("Cancel")
         }
     }
 }

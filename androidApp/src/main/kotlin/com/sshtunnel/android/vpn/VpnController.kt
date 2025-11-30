@@ -42,8 +42,30 @@ class VpnController @Inject constructor(
         private const val MAX_VPN_START_RETRIES = 3
     }
     
+    private val vpnStateReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            when (intent?.action) {
+                TunnelVpnService.ACTION_VPN_ERROR -> {
+                    android.util.Log.w(TAG, "VPN error received, marking as inactive")
+                    isVpnActive = false
+                    currentSocksPort = 0
+                }
+                TunnelVpnService.ACTION_VPN_STOPPED -> {
+                    android.util.Log.i(TAG, "VPN stopped received, marking as inactive")
+                    isVpnActive = false
+                    currentSocksPort = 0
+                }
+                TunnelVpnService.ACTION_VPN_STARTED -> {
+                    android.util.Log.i(TAG, "VPN started successfully")
+                    isVpnActive = true
+                }
+            }
+        }
+    }
+    
     init {
         observeConnectionState()
+        registerVpnStateReceiver()
     }
     
     private fun observeConnectionState() {
@@ -160,4 +182,30 @@ class VpnController @Inject constructor(
      * @return SOCKS port number, or 0 if VPN is not active
      */
     fun getCurrentSocksPort(): Int = currentSocksPort
+    
+    /**
+     * Manually retries starting the VPN with the current connection.
+     * This is useful when VPN permission is granted after initial failure.
+     */
+    fun retryVpnStart() {
+        scope.launch {
+            val state = connectionManager.observeConnectionState().value
+            if (state is ConnectionState.Connected) {
+                android.util.Log.i(TAG, "Manually retrying VPN start")
+                startVpn(state.connection.socksPort, state.connection.serverAddress)
+            } else {
+                android.util.Log.w(TAG, "Cannot retry VPN start - no active SSH connection")
+            }
+        }
+    }
+    
+    private fun registerVpnStateReceiver() {
+        val filter = android.content.IntentFilter().apply {
+            addAction(TunnelVpnService.ACTION_VPN_ERROR)
+            addAction(TunnelVpnService.ACTION_VPN_STOPPED)
+            addAction(TunnelVpnService.ACTION_VPN_STARTED)
+        }
+        context.registerReceiver(vpnStateReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        android.util.Log.d(TAG, "VPN state receiver registered")
+    }
 }

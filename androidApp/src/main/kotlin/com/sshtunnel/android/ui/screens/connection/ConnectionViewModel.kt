@@ -11,6 +11,7 @@ import com.sshtunnel.ssh.SSHConnectionManager
 import com.sshtunnel.testing.ConnectionTestResult
 import com.sshtunnel.testing.ConnectionTestService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +28,8 @@ class ConnectionViewModel @Inject constructor(
     private val connectionManager: SSHConnectionManager,
     private val connectionTestService: ConnectionTestService,
     private val profileRepository: ProfileRepository,
-    private val logger: com.sshtunnel.logging.Logger
+    private val logger: com.sshtunnel.logging.Logger,
+    @ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow<ConnectionUiState>(ConnectionUiState.Disconnected)
@@ -40,6 +42,8 @@ class ConnectionViewModel @Inject constructor(
     val vpnPermissionNeeded: StateFlow<Boolean> = _vpnPermissionNeeded.asStateFlow()
     
     private var currentProfile: ServerProfile? = null
+    private var isVpnActive = false
+    private var pendingConnection: Connection? = null
     
     companion object {
         private const val TAG = "ConnectionViewModel"
@@ -47,10 +51,21 @@ class ConnectionViewModel @Inject constructor(
     
     /**
      * Called when VPN permission is granted by the user.
+     * Auto-retries VPN start if there's a pending connection.
      */
     fun onVpnPermissionGranted() {
         logger.info(TAG, "VPN permission granted")
         _vpnPermissionNeeded.value = false
+        
+        // Auto-retry: If we have a pending connection waiting for VPN, retry VPN start
+        pendingConnection?.let { connection ->
+            logger.info(TAG, "Auto-retrying VPN start after permission granted")
+            // Update UI to show we're waiting for VPN
+            _uiState.value = ConnectionUiState.WaitingForVpn(connection, currentProfile)
+            // Get VpnController from Application and retry starting VPN
+            val app = context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp
+            app.vpnController.retryVpnStart()
+        }
     }
     
     /**
@@ -59,7 +74,48 @@ class ConnectionViewModel @Inject constructor(
     fun onVpnPermissionDenied() {
         logger.info(TAG, "VPN permission denied")
         _vpnPermissionNeeded.value = false
-        // Note: VPN won't work without permission, but SSH connection will still work
+        
+        // Disconnect SSH since VPN won't work without permission
+        pendingConnection?.let {
+            logger.warn(TAG, "VPN permission denied, disconnecting SSH")
+            disconnect()
+        }
+    }
+    
+    /**
+     * Called when VPN service starts successfully.
+     */
+    fun onVpnStarted() {
+        logger.info(TAG, "VPN started successfully")
+        isVpnActive = true
+        
+        // Update UI to show fully connected state
+        pendingConnection?.let { connection ->
+            _uiState.value = ConnectionUiState.Connected(connection, currentProfile)
+            pendingConnection = null
+        }
+    }
+    
+    /**
+     * Called when VPN service stops.
+     */
+    fun onVpnStopped() {
+        logger.info(TAG, "VPN stopped")
+        isVpnActive = false
+    }
+    
+    /**
+     * Called when VPN encounters an error.
+     */
+    fun onVpnError(errorMessage: String) {
+        logger.error(TAG, "VPN error: $errorMessage")
+        isVpnActive = false
+        
+        // Show error and disconnect
+        _uiState.value = ConnectionUiState.Error(
+            "VPN failed: $errorMessage",
+            null
+        )
     }
     
     init {
@@ -186,12 +242,15 @@ class ConnectionViewModel @Inject constructor(
     
     /**
      * Updates UI state based on connection manager state.
+     * Only shows "Connected" when both SSH and VPN are active.
      */
     private fun updateUiState(state: ConnectionState) {
         logger.verbose(TAG, "Connection state changed: ${state::class.simpleName}")
         _uiState.value = when (state) {
             is ConnectionState.Disconnected -> {
                 logger.info(TAG, "UI state updated to Disconnected")
+                isVpnActive = false
+                pendingConnection = null
                 ConnectionUiState.Disconnected
             }
             is ConnectionState.Connecting -> {
@@ -199,14 +258,20 @@ class ConnectionViewModel @Inject constructor(
                 ConnectionUiState.Connecting(currentProfile)
             }
             is ConnectionState.Connected -> {
-                logger.info(TAG, "UI state updated to Connected (SOCKS port: ${state.connection.socksPort})")
-                ConnectionUiState.Connected(
+                logger.info(TAG, "SSH connected (SOCKS port: ${state.connection.socksPort}), waiting for VPN")
+                // SSH is connected, but we need to wait for VPN to start
+                pendingConnection = state.connection
+                
+                // Don't show "Connected" yet - wait for VPN to start
+                ConnectionUiState.WaitingForVpn(
                     connection = state.connection,
                     profile = currentProfile
                 )
             }
             is ConnectionState.Error -> {
                 logger.error(TAG, "UI state updated to Error: ${state.error.message}")
+                isVpnActive = false
+                pendingConnection = null
                 ConnectionUiState.Error(
                     message = state.error.message,
                     error = state.error
@@ -336,7 +401,18 @@ sealed class ConnectionUiState {
     data class Connecting(val profile: ServerProfile?) : ConnectionUiState()
     
     /**
-     * Connection is active.
+     * SSH tunnel established, waiting for VPN to start.
+     * 
+     * @property connection The SSH connection details
+     * @property profile The profile used for this connection
+     */
+    data class WaitingForVpn(
+        val connection: Connection,
+        val profile: ServerProfile?
+    ) : ConnectionUiState()
+    
+    /**
+     * Connection is fully active (both SSH and VPN).
      * 
      * @property connection The active connection details
      * @property profile The profile used for this connection
