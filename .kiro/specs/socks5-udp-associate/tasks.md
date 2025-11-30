@@ -134,6 +134,7 @@
 
 
 
+
   - Launch coroutine in IO dispatcher
   - Create receive buffer (max UDP size: 65507 bytes)
   - Loop: receive datagram from relay socket with timeout
@@ -145,7 +146,11 @@
   - Clean up connection on error or cancellation
   - _Requirements: 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 9.2_
 
-- [ ] 9. Implement handleGenericUdpPacket() method
+- [x] 9. Implement handleGenericUdpPacket() method
+
+
+
+
 
   - Create ConnectionKey from packet 5-tuple
   - Check if UDP ASSOCIATE connection exists for this key
@@ -155,7 +160,9 @@
   - Call sendUdpThroughSocks5() to forward packet
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.5_
 
-- [ ] 9.1 Write property test for connection reuse
+- [x] 9.1 Write property test for connection reuse
+
+
   - **Property 4: Connection Reuse Consistency**
   - **Validates: Requirements 6.1, 6.2, 6.3, 6.4**
   - Generate sequence of packets to same destination

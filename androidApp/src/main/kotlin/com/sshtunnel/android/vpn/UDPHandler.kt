@@ -2,9 +2,12 @@ package com.sshtunnel.android.vpn
 
 import com.sshtunnel.android.vpn.packet.IPv4Header
 import com.sshtunnel.android.vpn.packet.PacketBuilder
-import com.sshtunnel.android.vpn.packet.Protocol
 import com.sshtunnel.logging.Logger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
 import java.io.IOException
@@ -85,8 +88,16 @@ class UDPHandler(
                     tunOutputStream = tunOutputStream
                 )
             } else {
-                logger.verbose(TAG, "Non-DNS UDP traffic not yet supported, dropping")
-                // TODO: Implement SOCKS5 UDP ASSOCIATE for non-DNS traffic (post-MVP)
+                // Handle generic UDP traffic through SOCKS5 UDP ASSOCIATE
+                logger.debug(TAG, "Generic UDP traffic detected, routing through SOCKS5 UDP ASSOCIATE")
+                handleGenericUdpPacket(
+                    sourceIp = ipHeader.sourceIP,
+                    sourcePort = udpHeader.sourcePort,
+                    destIp = ipHeader.destIP,
+                    destPort = udpHeader.destPort,
+                    payload = payload,
+                    tunOutputStream = tunOutputStream
+                )
             }
             
         } catch (e: Exception) {
@@ -263,6 +274,120 @@ class UDPHandler(
             
         } catch (e: Exception) {
             logger.error(TAG, "Error handling DNS query: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Handles non-DNS UDP packets by routing through SOCKS5 UDP ASSOCIATE.
+     * 
+     * This method:
+     * 1. Creates ConnectionKey from packet 5-tuple
+     * 2. Checks if UDP ASSOCIATE connection exists for this key
+     * 3. If exists: reuses connection, sends packet through it
+     * 4. If not exists: establishes new UDP ASSOCIATE connection
+     * 5. If establishment fails: logs error and drops packet
+     * 6. Calls sendUdpThroughSocks5() to forward packet
+     * 7. Starts UDP reader coroutine if this is a new connection
+     * 
+     * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.5
+     * 
+     * @param sourceIp Source IP address from the original packet
+     * @param sourcePort Source port from the original packet
+     * @param destIp Destination IP address
+     * @param destPort Destination port
+     * @param payload The UDP payload
+     * @param tunOutputStream Output stream to write response packets
+     */
+    private suspend fun handleGenericUdpPacket(
+        sourceIp: String,
+        sourcePort: Int,
+        destIp: String,
+        destPort: Int,
+        payload: ByteArray,
+        tunOutputStream: FileOutputStream
+    ) {
+        try {
+            // Step 1: Create ConnectionKey from packet 5-tuple
+            val key = ConnectionKey(
+                protocol = Protocol.UDP,
+                sourceIp = sourceIp,
+                sourcePort = sourcePort,
+                destIp = destIp,
+                destPort = destPort
+            )
+            
+            logger.verbose(
+                TAG,
+                "Handling generic UDP packet: $sourceIp:$sourcePort -> $destIp:$destPort, " +
+                "payload size: ${payload.size}"
+            )
+            
+            // Step 2: Check if UDP ASSOCIATE connection exists for this key
+            var connection = connectionTable.getUdpAssociateConnection(key)
+            
+            if (connection != null) {
+                // Step 3: If exists: reuse connection, send packet through it
+                logger.verbose(
+                    TAG,
+                    "Reusing existing UDP ASSOCIATE connection for $sourceIp:$sourcePort -> $destIp:$destPort"
+                )
+                
+                // Step 6: Call sendUdpThroughSocks5() to forward packet
+                sendUdpThroughSocks5(connection, destIp, destPort, payload)
+                
+            } else {
+                // Step 4: If not exists: establish new UDP ASSOCIATE connection
+                logger.info(
+                    TAG,
+                    "Establishing new UDP ASSOCIATE connection for $sourceIp:$sourcePort -> $destIp:$destPort"
+                )
+                
+                connection = establishUdpAssociate(key)
+                
+                if (connection == null) {
+                    // Step 5: If establishment fails: log error and drop packet
+                    logger.error(
+                        TAG,
+                        "Failed to establish UDP ASSOCIATE connection for $sourceIp:$sourcePort -> " +
+                        "$destIp:$destPort, dropping packet"
+                    )
+                    return
+                }
+                
+                logger.info(
+                    TAG,
+                    "Successfully established UDP ASSOCIATE connection for $sourceIp:$sourcePort -> " +
+                    "$destIp:$destPort"
+                )
+                
+                // Step 7: Start UDP reader coroutine for this new connection
+                val readerJob = startUdpReader(key, connection, tunOutputStream)
+                
+                // Update the connection with the actual reader job
+                val updatedConnection = connection.copy(readerJob = readerJob)
+                
+                // Replace the connection in the table with the updated one
+                connectionTable.removeUdpAssociateConnection(key)
+                connectionTable.addUdpAssociateConnection(updatedConnection)
+                
+                logger.debug(
+                    TAG,
+                    "Started UDP reader coroutine for $sourceIp:$sourcePort -> $destIp:$destPort"
+                )
+                
+                // Step 6: Call sendUdpThroughSocks5() to forward packet
+                sendUdpThroughSocks5(updatedConnection, destIp, destPort, payload)
+            }
+            
+        } catch (e: Exception) {
+            // Handle errors gracefully - don't let one bad packet crash the router
+            // Requirements: 7.1, 7.2, 7.5
+            logger.error(
+                TAG,
+                "Error handling generic UDP packet from $sourceIp:$sourcePort to $destIp:$destPort: ${e.message}",
+                e
+            )
+            // Continue processing - UDP is best-effort
         }
     }
     
@@ -1048,8 +1173,8 @@ class UDPHandler(
         key: ConnectionKey,
         connection: UdpAssociateConnection,
         tunOutputStream: FileOutputStream
-    ): kotlinx.coroutines.Job {
-        return kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+    ): Job {
+        return CoroutineScope(Dispatchers.IO).launch {
             // Step 2: Create receive buffer (max UDP size: 65507 bytes)
             // Max UDP datagram size = 65535 (max IP packet) - 20 (IP header) - 8 (UDP header)
             val maxUdpSize = 65507
@@ -1063,7 +1188,7 @@ class UDPHandler(
             
             try {
                 // Step 3: Loop: receive datagram from relay socket with timeout
-                while (kotlinx.coroutines.isActive) {
+                while (isActive) {
                     try {
                         // Receive datagram from relay socket
                         // Socket timeout is already set in establishUdpAssociate()
@@ -1145,7 +1270,7 @@ class UDPHandler(
                     } catch (e: IOException) {
                         // Step 8: Handle IOException
                         // Socket error - connection may be broken
-                        if (kotlinx.coroutines.isActive) {
+                        if (isActive) {
                             logger.error(
                                 TAG,
                                 "IOException reading from UDP relay socket: ${e.message}",
