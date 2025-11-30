@@ -276,6 +276,7 @@
 
 
 
+
   - Create mock SOCKS5 server with UDP ASSOCIATE support
   - Test end-to-end UDP packet flow
   - Test bidirectional communication
@@ -310,7 +311,10 @@
   - Perform operations on each concurrently
   - Verify operations don't interfere with each other
 
-- [ ] 17. Write unit tests for helper methods
+- [x] 17. Write unit tests for helper methods
+
+
+
   - Test SOCKS5 message construction
   - Test address encoding (IPv4)
   - Test port encoding (big-endian)
