@@ -18,6 +18,7 @@
 
 
 
+
   - Add ConcurrentHashMap for UDP ASSOCIATE connections
   - Implement addUdpAssociateConnection() method
   - Implement getUdpAssociateConnection() method
@@ -28,7 +29,11 @@
   - Update getStatistics() to include UDP ASSOCIATE metrics
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 9.3_
 
-- [ ] 3. Implement SOCKS5 UDP ASSOCIATE handshake
+- [x] 3. Implement SOCKS5 UDP ASSOCIATE handshake
+
+
+
+
   - Create performUdpAssociateHandshake() method
   - Build UDP ASSOCIATE request message (VER=0x05, CMD=0x03, ATYP, DST.ADDR, DST.PORT)
   - Send request on TCP control socket
@@ -37,7 +42,9 @@
   - Return UdpRelayEndpoint or null on failure
   - _Requirements: 1.1, 1.2, 1.3, 7.1, 11.1, 11.2_
 
-- [ ] 3.1 Write property test for UDP ASSOCIATE handshake
+- [x] 3.1 Write property test for UDP ASSOCIATE handshake
+
+
   - **Property 1: UDP ASSOCIATE Handshake Correctness**
   - **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
   - Generate random connection keys

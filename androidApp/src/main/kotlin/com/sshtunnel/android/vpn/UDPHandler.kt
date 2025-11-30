@@ -373,6 +373,159 @@ class UDPHandler(
     }
     
     /**
+     * Performs SOCKS5 UDP ASSOCIATE handshake on the control connection.
+     * 
+     * UDP ASSOCIATE handshake steps:
+     * 1. Send greeting: [VER=5, NMETHODS=1, METHOD=0 (no auth)]
+     * 2. Receive method selection: [VER=5, METHOD=0]
+     * 3. Send UDP ASSOCIATE request: [VER=5, CMD=3 (UDP ASSOCIATE), RSV=0, ATYP=1 (IPv4), DST.ADDR, DST.PORT]
+     * 4. Receive response: [VER=5, REP=0 (success), RSV=0, ATYP, BND.ADDR, BND.PORT]
+     * 
+     * The BND.ADDR and BND.PORT in the response indicate the UDP relay endpoint
+     * where encapsulated datagrams should be sent.
+     * 
+     * @param controlSocket Connected TCP socket to SOCKS5 proxy (must remain open)
+     * @param clientAddress Client's address to bind (typically "0.0.0.0" for any)
+     * @param clientPort Client's port to bind (typically 0 for any)
+     * @return UdpRelayEndpoint with relay address and port, or null on failure
+     * 
+     * Requirements: 1.1, 1.2, 1.3, 7.1, 11.1, 11.2
+     */
+    private fun performUdpAssociateHandshake(
+        controlSocket: Socket,
+        clientAddress: String = "0.0.0.0",
+        clientPort: Int = 0
+    ): UdpRelayEndpoint? {
+        try {
+            val output = controlSocket.getOutputStream()
+            val input = controlSocket.getInputStream()
+            
+            // Step 1: Send greeting
+            // [VER=5, NMETHODS=1, METHOD=0 (no authentication)]
+            output.write(byteArrayOf(0x05, 0x01, 0x00))
+            output.flush()
+            
+            logger.debug(TAG, "Sent SOCKS5 greeting for UDP ASSOCIATE")
+            
+            // Step 2: Read method selection
+            val greeting = ByteArray(2)
+            if (input.read(greeting) != 2) {
+                logger.error(TAG, "Failed to read SOCKS5 greeting response")
+                return null
+            }
+            
+            if (greeting[0] != 0x05.toByte()) {
+                logger.error(TAG, "Invalid SOCKS5 version in greeting: ${greeting[0]}")
+                return null
+            }
+            
+            if (greeting[1] != 0x00.toByte()) {
+                logger.error(TAG, "SOCKS5 authentication method not accepted: ${greeting[1]}")
+                return null
+            }
+            
+            logger.debug(TAG, "SOCKS5 greeting accepted")
+            
+            // Step 3: Send UDP ASSOCIATE request
+            // [VER=5, CMD=3 (UDP ASSOCIATE), RSV=0, ATYP=1 (IPv4), DST.ADDR (4 bytes), DST.PORT (2 bytes)]
+            val ipBytes = java.net.InetAddress.getByName(clientAddress).address
+            val portBytes = ByteBuffer.allocate(2).putShort(clientPort.toShort()).array()
+            
+            val request = byteArrayOf(
+                0x05,  // Version 5
+                0x03,  // CMD: UDP ASSOCIATE
+                0x00,  // Reserved
+                0x01   // ATYP: IPv4
+            ) + ipBytes + portBytes
+            
+            output.write(request)
+            output.flush()
+            
+            logger.debug(TAG, "Sent UDP ASSOCIATE request: $clientAddress:$clientPort")
+            
+            // Step 4: Read response
+            // [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
+            // Minimum response size: 10 bytes (for IPv4)
+            val response = ByteArray(10)
+            val read = input.read(response)
+            
+            if (read < 10) {
+                logger.error(TAG, "Incomplete SOCKS5 UDP ASSOCIATE response: $read bytes")
+                return null
+            }
+            
+            if (response[0] != 0x05.toByte()) {
+                logger.error(TAG, "Invalid SOCKS5 response version: ${response[0]}")
+                return null
+            }
+            
+            // Check reply code (REP field)
+            val replyCode = response[1].toInt() and 0xFF
+            if (replyCode != 0x00) {
+                val errorMessage = when (replyCode) {
+                    0x01 -> "General SOCKS server failure"
+                    0x02 -> "Connection not allowed by ruleset"
+                    0x03 -> "Network unreachable"
+                    0x04 -> "Host unreachable"
+                    0x05 -> "Connection refused"
+                    0x06 -> "TTL expired"
+                    0x07 -> "Command not supported (UDP ASSOCIATE not supported by server)"
+                    0x08 -> "Address type not supported"
+                    else -> "Unknown error code: $replyCode"
+                }
+                logger.error(TAG, "SOCKS5 UDP ASSOCIATE failed: $errorMessage (code: 0x${replyCode.toString(16)})")
+                return null
+            }
+            
+            // Parse ATYP (address type)
+            val atyp = response[3].toInt() and 0xFF
+            
+            // Parse BND.ADDR based on ATYP
+            val relayAddress = when (atyp) {
+                0x01 -> {
+                    // IPv4 address (4 bytes)
+                    val addr = response.copyOfRange(4, 8)
+                    java.net.InetAddress.getByAddress(addr).hostAddress
+                }
+                0x03 -> {
+                    // Domain name (first byte is length)
+                    logger.error(TAG, "Domain name address type not yet supported for UDP ASSOCIATE")
+                    return null
+                }
+                0x04 -> {
+                    // IPv6 address (16 bytes)
+                    logger.error(TAG, "IPv6 address type not yet supported for UDP ASSOCIATE")
+                    return null
+                }
+                else -> {
+                    logger.error(TAG, "Unknown address type: $atyp")
+                    return null
+                }
+            }
+            
+            // Parse BND.PORT (2 bytes, big-endian)
+            val relayPort = ((response[8].toInt() and 0xFF) shl 8) or
+                           (response[9].toInt() and 0xFF)
+            
+            if (relayPort == 0) {
+                logger.error(TAG, "Invalid relay port: 0")
+                return null
+            }
+            
+            logger.info(TAG, "UDP ASSOCIATE handshake successful: relay endpoint $relayAddress:$relayPort")
+            
+            return UdpRelayEndpoint(
+                address = relayAddress ?: "0.0.0.0",
+                port = relayPort
+            )
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "UDP ASSOCIATE handshake error: ${e.message}", e)
+            return null
+        }
+    }
+    
+    /**
      * Performs SOCKS5 handshake for connecting to a destination through the proxy.
      * 
      * SOCKS5 handshake steps:
