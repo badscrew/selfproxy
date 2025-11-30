@@ -265,6 +265,10 @@ We chose Apache 2.0 because:
 
 This project uses several open source libraries. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for a complete list of dependencies and their licenses.
 
+## Development Notes
+
+Parts of this project were created using agentic coding with AI assistance. The development process leveraged AI agents to accelerate implementation while maintaining code quality through property-based testing, comprehensive documentation, and rigorous review processes.
+
 ## Contributing
 
 Contributions are welcome! This project is in active development.
