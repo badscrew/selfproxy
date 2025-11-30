@@ -186,6 +186,7 @@
 
 
 
+
   - Update ConnectionTable.cleanupIdleConnections()
   - Iterate through UDP ASSOCIATE connections
   - Check lastActivityAt against idle timeout (2 minutes)
@@ -203,7 +204,11 @@
   - Verify idle connections are removed
   - Verify active connections are preserved
 
-- [ ] 12. Add error handling and resilience
+- [x] 12. Add error handling and resilience
+
+
+
+
   - Wrap all UDP ASSOCIATE operations in try-catch
   - Log specific error messages for each SOCKS5 error code
   - Ensure errors in one connection don't affect others
@@ -211,7 +216,9 @@
   - Validate all parsed data before use
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 11.4_
 
-- [ ] 12.1 Write property test for error isolation
+- [x] 12.1 Write property test for error isolation
+
+
   - **Property 7: Error Isolation**
   - **Validates: Requirements 7.1, 7.2, 7.3, 7.5**
   - Create multiple UDP ASSOCIATE connections
@@ -219,6 +226,7 @@
   - Verify other connections continue working normally
 
 - [ ] 13. Update statistics tracking
+
   - Ensure bytesSent is updated on each send
   - Ensure bytesReceived is updated on each receive
   - Include UDP ASSOCIATE connections in getStatistics()
