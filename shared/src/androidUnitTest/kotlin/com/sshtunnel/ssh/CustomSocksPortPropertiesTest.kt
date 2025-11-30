@@ -41,7 +41,7 @@ class CustomSocksPortPropertiesTest {
             iterations = 100,
             Arb.customSocksPort()
         ) { requestedPort ->
-            val client = AndroidSSHClient()
+            val client = AndroidSSHClient(MockLogger())
             
             // Create a mock session (not connected to real server)
             val mockSession = SSHSession(
@@ -104,7 +104,7 @@ class CustomSocksPortPropertiesTest {
         // Feature: ssh-tunnel-proxy, Property 29: Custom SOCKS5 port configuration
         // Validates: Requirements 10.4
         
-        val client = AndroidSSHClient()
+        val client = AndroidSSHClient(MockLogger())
         
         // Create a mock session
         val mockSession = SSHSession(
@@ -148,7 +148,7 @@ class CustomSocksPortPropertiesTest {
         // Feature: ssh-tunnel-proxy, Property 29: Custom SOCKS5 port configuration
         // Validates: Requirements 10.4
         
-        val client = AndroidSSHClient()
+        val client = AndroidSSHClient(MockLogger())
         val testPorts = listOf(
             0,      // Automatic
             1024,   // Minimum user port
@@ -210,5 +210,20 @@ class CustomSocksPortPropertiesTest {
                 Arb.int(1024, 65535).bind()
             }
         }
+    }
+    
+    /**
+     * Mock logger for testing.
+     */
+    private class MockLogger : com.sshtunnel.logging.Logger {
+        override fun verbose(tag: String, message: String, throwable: Throwable?) {}
+        override fun debug(tag: String, message: String, throwable: Throwable?) {}
+        override fun info(tag: String, message: String, throwable: Throwable?) {}
+        override fun warn(tag: String, message: String, throwable: Throwable?) {}
+        override fun error(tag: String, message: String, throwable: Throwable?) {}
+        override fun getLogEntries(): List<com.sshtunnel.logging.LogEntry> = emptyList()
+        override fun clearLogs() {}
+        override fun setVerboseEnabled(enabled: Boolean) {}
+        override fun isVerboseEnabled(): Boolean = false
     }
 }

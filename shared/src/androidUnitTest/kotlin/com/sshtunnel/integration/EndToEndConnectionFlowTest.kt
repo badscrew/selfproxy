@@ -79,10 +79,11 @@ class EndToEndConnectionFlowTest {
         profileRepository = ProfileRepositoryImpl(database)
         credentialStore = MockCredentialStore() // Use mock for testing
         keyParser = AndroidSSHKeyParser()
-        sshClient = AndroidSSHClient()
+        sshClient = AndroidSSHClient(MockLogger())
         connectionManager = SSHConnectionManagerImpl(
             sshClient = sshClient,
-            credentialStore = credentialStore
+            credentialStore = credentialStore,
+            logger = MockLogger()
         )
     }
     
@@ -264,5 +265,20 @@ class EndToEndConnectionFlowTest {
      */
     private fun generateTestKeyData(): ByteArray {
         return ByteArray(32) { it.toByte() } // Simple test data
+    }
+    
+    /**
+     * Mock logger for testing.
+     */
+    private class MockLogger : com.sshtunnel.logging.Logger {
+        override fun verbose(tag: String, message: String, throwable: Throwable?) {}
+        override fun debug(tag: String, message: String, throwable: Throwable?) {}
+        override fun info(tag: String, message: String, throwable: Throwable?) {}
+        override fun warn(tag: String, message: String, throwable: Throwable?) {}
+        override fun error(tag: String, message: String, throwable: Throwable?) {}
+        override fun getLogEntries(): List<com.sshtunnel.logging.LogEntry> = emptyList()
+        override fun clearLogs() {}
+        override fun setVerboseEnabled(enabled: Boolean) {}
+        override fun isVerboseEnabled(): Boolean = false
     }
 }

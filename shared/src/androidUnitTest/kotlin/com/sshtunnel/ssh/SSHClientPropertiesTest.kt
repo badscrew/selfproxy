@@ -42,7 +42,7 @@ class SSHClientPropertiesTest {
             Arb.serverProfile(),
             Arb.privateKey()
         ) { profile, privateKey ->
-            val client = AndroidSSHClient()
+            val client = AndroidSSHClient(MockLogger())
             
             // Validate that the client accepts the credentials without throwing
             // Note: Actual connection will fail without a real SSH server, but we're
@@ -109,7 +109,7 @@ class SSHClientPropertiesTest {
             iterations = 100,
             Arb.socksPort()
         ) { localPort ->
-            val client = AndroidSSHClient()
+            val client = AndroidSSHClient(MockLogger())
             
             // Create a mock session (not connected to real server)
             val mockSession = SSHSession(
@@ -167,7 +167,7 @@ class SSHClientPropertiesTest {
             Arb.privateKey(),
             Arb.boolean() // compression enabled or disabled
         ) { profile, privateKey, enableCompression ->
-            val client = AndroidSSHClient()
+            val client = AndroidSSHClient(MockLogger())
             
             // Attempt to connect with compression setting
             val result = client.connect(
@@ -251,7 +251,7 @@ class SSHClientPropertiesTest {
             Arb.privateKey(),
             Arb.boolean() // strictHostKeyChecking enabled or disabled
         ) { profile, privateKey, strictHostKeyChecking ->
-            val client = AndroidSSHClient()
+            val client = AndroidSSHClient(MockLogger())
             
             // Attempt to connect with host key checking setting
             val result = client.connect(
@@ -367,5 +367,20 @@ class SSHClientPropertiesTest {
                 Arb.int(1024..65535).bind()
             }
         }
+    }
+    
+    /**
+     * Mock logger for testing.
+     */
+    private class MockLogger : com.sshtunnel.logging.Logger {
+        override fun verbose(tag: String, message: String, throwable: Throwable?) {}
+        override fun debug(tag: String, message: String, throwable: Throwable?) {}
+        override fun info(tag: String, message: String, throwable: Throwable?) {}
+        override fun warn(tag: String, message: String, throwable: Throwable?) {}
+        override fun error(tag: String, message: String, throwable: Throwable?) {}
+        override fun getLogEntries(): List<com.sshtunnel.logging.LogEntry> = emptyList()
+        override fun clearLogs() {}
+        override fun setVerboseEnabled(enabled: Boolean) {}
+        override fun isVerboseEnabled(): Boolean = false
     }
 }
