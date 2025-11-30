@@ -285,6 +285,8 @@ class ConnectionTableTest {
         assertEquals(2, stats.activeTcpConnections)
         assertEquals(1, stats.totalUdpConnections)
         assertEquals(1, stats.activeUdpConnections)
+        assertEquals(0, stats.totalUdpAssociateConnections)
+        assertEquals(0, stats.activeUdpAssociateConnections)
         assertEquals(1600L, stats.totalBytesSent) // 1000 + 500 + 100
         assertEquals(3700L, stats.totalBytesReceived) // 2000 + 1500 + 200
     }
@@ -589,6 +591,253 @@ class ConnectionTableTest {
         assertNull(retrieved)
     }
     
+    @Test
+    fun `adding and retrieving UDP ASSOCIATE connection should work`() = runTest {
+        // Arrange
+        val key = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val connection = createMockUdpAssociateConnection(key)
+        
+        // Act
+        connectionTable.addUdpAssociateConnection(connection)
+        val retrieved = connectionTable.getUdpAssociateConnection(key)
+        
+        // Assert
+        assertNotNull(retrieved)
+        assertEquals(key, retrieved?.key)
+    }
+    
+    @Test
+    fun `removing UDP ASSOCIATE connection should work`() = runTest {
+        // Arrange
+        val key = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val connection = createMockUdpAssociateConnection(key)
+        connectionTable.addUdpAssociateConnection(connection)
+        
+        // Act
+        val removed = connectionTable.removeUdpAssociateConnection(key)
+        val retrieved = connectionTable.getUdpAssociateConnection(key)
+        
+        // Assert
+        assertNotNull(removed)
+        assertEquals(key, removed?.key)
+        assertNull(retrieved)
+    }
+    
+    @Test
+    fun `updateUdpAssociateStats should update bytes and timestamp`() = runTest {
+        // Arrange
+        val key = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val connection = createMockUdpAssociateConnection(key)
+        connectionTable.addUdpAssociateConnection(connection)
+        
+        val initialLastActivity = connection.lastActivityAt
+        delay(10) // Small delay to ensure timestamp changes
+        
+        // Act
+        connectionTable.updateUdpAssociateStats(key, bytesSent = 1000, bytesReceived = 2000)
+        val retrieved = connectionTable.getUdpAssociateConnection(key)
+        
+        // Assert
+        assertNotNull(retrieved)
+        assertEquals(1000L, retrieved?.bytesSent)
+        assertEquals(2000L, retrieved?.bytesReceived)
+        assertTrue(retrieved!!.lastActivityAt > initialLastActivity)
+    }
+    
+    @Test
+    fun `idle UDP ASSOCIATE connection cleanup should work`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val oldTime = now - 150_000 // 2.5 minutes ago
+        
+        val key = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val connection = createMockUdpAssociateConnection(key, lastActivityAt = oldTime)
+        
+        connectionTable.addUdpAssociateConnection(connection)
+        
+        // Act
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 120_000)
+        
+        // Assert
+        val retrieved = connectionTable.getUdpAssociateConnection(key)
+        assertNull(retrieved)
+    }
+    
+    @Test
+    fun `closeAllConnections should close UDP ASSOCIATE connections`() = runTest {
+        // Arrange
+        val key = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val connection = createMockUdpAssociateConnection(key)
+        
+        connectionTable.addUdpAssociateConnection(connection)
+        
+        // Act
+        connectionTable.closeAllConnections()
+        
+        // Assert
+        val retrieved = connectionTable.getUdpAssociateConnection(key)
+        assertNull(retrieved)
+    }
+    
+    @Test
+    fun `statistics should include UDP ASSOCIATE connections`() = runTest {
+        // Arrange
+        val tcpKey = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val tcpConnection = createMockTcpConnection(
+            tcpKey,
+            bytesSent = 1000,
+            bytesReceived = 2000
+        )
+        
+        val udpKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "8.8.8.8",
+            destPort = 53
+        )
+        val udpConnection = createMockUdpConnection(
+            udpKey,
+            bytesSent = 100,
+            bytesReceived = 200
+        )
+        
+        val udpAssociateKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54322,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val udpAssociateConnection = createMockUdpAssociateConnection(
+            udpAssociateKey,
+            bytesSent = 500,
+            bytesReceived = 1000
+        )
+        
+        // Act
+        connectionTable.addTcpConnection(tcpConnection)
+        connectionTable.addUdpConnection(udpConnection)
+        connectionTable.addUdpAssociateConnection(udpAssociateConnection)
+        
+        val stats = connectionTable.getStatistics()
+        
+        // Assert
+        assertEquals(1, stats.totalTcpConnections)
+        assertEquals(1, stats.activeTcpConnections)
+        assertEquals(1, stats.totalUdpConnections)
+        assertEquals(1, stats.activeUdpConnections)
+        assertEquals(1, stats.totalUdpAssociateConnections)
+        assertEquals(1, stats.activeUdpAssociateConnections)
+        assertEquals(1600L, stats.totalBytesSent) // 1000 + 100 + 500
+        assertEquals(3200L, stats.totalBytesReceived) // 2000 + 200 + 1000
+    }
+    
+    @Test
+    fun `cleanup should handle mixed TCP UDP and UDP ASSOCIATE connections`() = runTest {
+        // Arrange
+        val now = System.currentTimeMillis()
+        val oldTime = now - 150_000 // 2.5 minutes ago
+        val recentTime = now - 60_000 // 1 minute ago
+        
+        val oldTcpKey = ConnectionKey(
+            protocol = Protocol.TCP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 12345,
+            destIp = "1.1.1.1",
+            destPort = 80
+        )
+        val oldTcpConnection = createMockTcpConnection(oldTcpKey, lastActivityAt = oldTime)
+        
+        val recentUdpKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54321,
+            destIp = "8.8.8.8",
+            destPort = 53
+        )
+        val recentUdpConnection = createMockUdpConnection(recentUdpKey, lastActivityAt = recentTime)
+        
+        val oldUdpAssociateKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54322,
+            destIp = "1.1.1.1",
+            destPort = 3478
+        )
+        val oldUdpAssociateConnection = createMockUdpAssociateConnection(
+            oldUdpAssociateKey,
+            lastActivityAt = oldTime
+        )
+        
+        val recentUdpAssociateKey = ConnectionKey(
+            protocol = Protocol.UDP,
+            sourceIp = "10.0.0.2",
+            sourcePort = 54323,
+            destIp = "1.1.1.1",
+            destPort = 3479
+        )
+        val recentUdpAssociateConnection = createMockUdpAssociateConnection(
+            recentUdpAssociateKey,
+            lastActivityAt = recentTime
+        )
+        
+        connectionTable.addTcpConnection(oldTcpConnection)
+        connectionTable.addUdpConnection(recentUdpConnection)
+        connectionTable.addUdpAssociateConnection(oldUdpAssociateConnection)
+        connectionTable.addUdpAssociateConnection(recentUdpAssociateConnection)
+        
+        // Act
+        connectionTable.cleanupIdleConnections(idleTimeoutMs = 120_000)
+        
+        // Assert
+        assertNull(connectionTable.getTcpConnection(oldTcpKey))
+        assertNotNull(connectionTable.getUdpConnection(recentUdpKey))
+        assertNull(connectionTable.getUdpAssociateConnection(oldUdpAssociateKey))
+        assertNotNull(connectionTable.getUdpAssociateConnection(recentUdpAssociateKey))
+        
+        val stats = connectionTable.getStatistics()
+        assertEquals(0, stats.activeTcpConnections)
+        assertEquals(1, stats.activeUdpConnections)
+        assertEquals(1, stats.activeUdpAssociateConnections)
+    }
+    
     // Helper functions
     
     private fun createMockTcpConnection(
@@ -625,6 +874,25 @@ class ConnectionTableTest {
             lastActivityAt = lastActivityAt,
             bytesSent = bytesSent,
             bytesReceived = bytesReceived
+        )
+    }
+    
+    private fun createMockUdpAssociateConnection(
+        key: ConnectionKey,
+        lastActivityAt: Long = System.currentTimeMillis(),
+        bytesSent: Long = 0,
+        bytesReceived: Long = 0
+    ): UdpAssociateConnection {
+        return UdpAssociateConnection(
+            key = key,
+            controlSocket = createMockSocket(),
+            relaySocket = java.net.DatagramSocket(),
+            relayEndpoint = UdpRelayEndpoint("127.0.0.1", 1080),
+            createdAt = System.currentTimeMillis(),
+            lastActivityAt = lastActivityAt,
+            bytesSent = bytesSent,
+            bytesReceived = bytesReceived,
+            readerJob = Job()
         )
     }
     

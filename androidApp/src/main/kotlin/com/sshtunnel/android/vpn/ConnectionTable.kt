@@ -20,11 +20,13 @@ class ConnectionTable(
 ) {
     private val tcpConnections = ConcurrentHashMap<ConnectionKey, TcpConnection>()
     private val udpConnections = ConcurrentHashMap<ConnectionKey, UdpConnection>()
+    private val udpAssociateConnections = ConcurrentHashMap<ConnectionKey, UdpAssociateConnection>()
     private val lock = Mutex()
     
     // Statistics tracking
     private var totalTcpConnectionsCreated = 0
     private var totalUdpConnectionsCreated = 0
+    private var totalUdpAssociateConnectionsCreated = 0
     
     companion object {
         private const val TAG = "ConnectionTable"
@@ -114,6 +116,69 @@ class ConnectionTable(
     }
     
     /**
+     * Add a UDP ASSOCIATE connection to the table
+     * 
+     * UDP ASSOCIATE connections are used for SOCKS5 UDP relay.
+     * Each connection maintains a TCP control socket and a UDP relay socket.
+     * 
+     * @param connection The UDP ASSOCIATE connection to add
+     * Requirements: 2.1, 9.1
+     */
+    suspend fun addUdpAssociateConnection(connection: UdpAssociateConnection) {
+        lock.withLock {
+            udpAssociateConnections[connection.key] = connection
+            totalUdpAssociateConnectionsCreated++
+        }
+    }
+    
+    /**
+     * Retrieve a UDP ASSOCIATE connection by its key
+     * 
+     * @param key The connection key (5-tuple)
+     * @return The UDP ASSOCIATE connection if found, null otherwise
+     * Requirements: 2.1, 6.1, 6.2
+     */
+    suspend fun getUdpAssociateConnection(key: ConnectionKey): UdpAssociateConnection? {
+        return udpAssociateConnections[key]
+    }
+    
+    /**
+     * Remove a UDP ASSOCIATE connection from the table
+     * 
+     * @param key The connection key to remove
+     * @return The removed UDP ASSOCIATE connection if found, null otherwise
+     * Requirements: 2.2, 2.3
+     */
+    suspend fun removeUdpAssociateConnection(key: ConnectionKey): UdpAssociateConnection? {
+        return lock.withLock {
+            udpAssociateConnections.remove(key)
+        }
+    }
+    
+    /**
+     * Update UDP ASSOCIATE connection statistics
+     * 
+     * Updates the bytes sent/received counters and last activity timestamp
+     * for a UDP ASSOCIATE connection.
+     * 
+     * @param key The connection key
+     * @param bytesSent Number of bytes sent (added to existing count)
+     * @param bytesReceived Number of bytes received (added to existing count)
+     * Requirements: 2.4, 9.1, 9.2, 9.4
+     */
+    suspend fun updateUdpAssociateStats(
+        key: ConnectionKey,
+        bytesSent: Long = 0,
+        bytesReceived: Long = 0
+    ) {
+        udpAssociateConnections[key]?.let { connection ->
+            connection.bytesSent += bytesSent
+            connection.bytesReceived += bytesReceived
+            connection.lastActivityAt = System.currentTimeMillis()
+        }
+    }
+    
+    /**
      * Clean up idle connections that have exceeded the timeout
      * 
      * Closes connections that have been idle for longer than the specified timeout.
@@ -132,6 +197,7 @@ class ConnectionTable(
         val now = System.currentTimeMillis()
         val connectionsToRemove = mutableListOf<Pair<ConnectionKey, TcpConnection>>()
         val udpConnectionsToRemove = mutableListOf<Pair<ConnectionKey, UdpConnection>>()
+        val udpAssociateConnectionsToRemove = mutableListOf<Pair<ConnectionKey, UdpAssociateConnection>>()
         
         lock.withLock {
             // Find idle TCP connections or connections in TIME_WAIT
@@ -196,11 +262,41 @@ class ConnectionTable(
                 )
             }
             
-            if (connectionsToRemove.isNotEmpty() || udpConnectionsToRemove.isNotEmpty()) {
+            // Find idle UDP ASSOCIATE connections
+            udpAssociateConnections.forEach { (key, connection) ->
+                if (now - connection.lastActivityAt > idleTimeoutMs) {
+                    udpAssociateConnectionsToRemove.add(key to connection)
+                }
+            }
+            
+            // Remove idle UDP ASSOCIATE connections and close sockets
+            udpAssociateConnectionsToRemove.forEach { (key, connection) ->
+                udpAssociateConnections.remove(key)
+                try {
+                    connection.readerJob.cancel()
+                    connection.relaySocket.close()
+                    connection.controlSocket.close()
+                } catch (e: Exception) {
+                    // Ignore errors during cleanup
+                }
+                
+                // Log UDP ASSOCIATE connection closure with duration and statistics
+                val duration = now - connection.createdAt
+                val durationSeconds = duration / 1000.0
+                logger.info(
+                    TAG,
+                    "UDP ASSOCIATE connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
+                    "(reason=idle_timeout, duration=${String.format("%.2f", durationSeconds)}s, " +
+                    "sent=${connection.bytesSent} bytes, received=${connection.bytesReceived} bytes)"
+                )
+            }
+            
+            if (connectionsToRemove.isNotEmpty() || udpConnectionsToRemove.isNotEmpty() || udpAssociateConnectionsToRemove.isNotEmpty()) {
                 logger.debug(
                     TAG,
-                    "Cleaned up ${connectionsToRemove.size} idle TCP connections and " +
-                    "${udpConnectionsToRemove.size} idle UDP connections"
+                    "Cleaned up ${connectionsToRemove.size} idle TCP connections, " +
+                    "${udpConnectionsToRemove.size} idle UDP connections, and " +
+                    "${udpAssociateConnectionsToRemove.size} idle UDP ASSOCIATE connections"
                 )
             }
         }
@@ -211,7 +307,7 @@ class ConnectionTable(
      * 
      * Used when stopping the packet router or VPN service.
      * 
-     * Requirements: 9.4
+     * Requirements: 2.3, 9.4
      */
     suspend fun closeAllConnections() {
         lock.withLock {
@@ -235,6 +331,18 @@ class ConnectionTable(
                 }
             }
             udpConnections.clear()
+            
+            // Close all UDP ASSOCIATE connections
+            udpAssociateConnections.values.forEach { connection ->
+                try {
+                    connection.readerJob.cancel()
+                    connection.relaySocket.close()
+                    connection.controlSocket.close()
+                } catch (e: Exception) {
+                    // Ignore errors during cleanup
+                }
+            }
+            udpAssociateConnections.clear()
         }
     }
     
@@ -243,22 +351,30 @@ class ConnectionTable(
      * 
      * Provides metrics about active connections and data transfer.
      * Thread-safe access without locking for performance.
+     * Includes UDP ASSOCIATE connection metrics.
      * 
      * @return ConnectionStatistics with current metrics
-     * Requirements: 13.1, 13.2, 13.3, 13.4, 13.5
+     * Requirements: 2.4, 9.3, 13.1, 13.2, 13.3, 13.4, 13.5
      */
     fun getStatistics(): ConnectionStatistics {
         val tcpConns = tcpConnections.values.toList()
         val udpConns = udpConnections.values.toList()
+        val udpAssociateConns = udpAssociateConnections.values.toList()
         
-        val totalBytesSent = tcpConns.sumOf { it.bytesSent } + udpConns.sumOf { it.bytesSent }
-        val totalBytesReceived = tcpConns.sumOf { it.bytesReceived } + udpConns.sumOf { it.bytesReceived }
+        val totalBytesSent = tcpConns.sumOf { it.bytesSent } + 
+                            udpConns.sumOf { it.bytesSent } + 
+                            udpAssociateConns.sumOf { it.bytesSent }
+        val totalBytesReceived = tcpConns.sumOf { it.bytesReceived } + 
+                                udpConns.sumOf { it.bytesReceived } + 
+                                udpAssociateConns.sumOf { it.bytesReceived }
         
         return ConnectionStatistics(
             totalTcpConnections = totalTcpConnectionsCreated,
             activeTcpConnections = tcpConns.size,
             totalUdpConnections = totalUdpConnectionsCreated,
             activeUdpConnections = udpConns.size,
+            totalUdpAssociateConnections = totalUdpAssociateConnectionsCreated,
+            activeUdpAssociateConnections = udpAssociateConns.size,
             totalBytesSent = totalBytesSent,
             totalBytesReceived = totalBytesReceived
         )
@@ -269,12 +385,17 @@ class ConnectionTable(
  * Connection statistics data class
  * 
  * Tracks metrics about connection usage and data transfer.
+ * Includes separate counters for UDP ASSOCIATE connections.
+ * 
+ * Requirements: 9.3, 9.5
  */
 data class ConnectionStatistics(
     val totalTcpConnections: Int,
     val activeTcpConnections: Int,
     val totalUdpConnections: Int,
     val activeUdpConnections: Int,
+    val totalUdpAssociateConnections: Int,
+    val activeUdpAssociateConnections: Int,
     val totalBytesSent: Long,
     val totalBytesReceived: Long
 )
