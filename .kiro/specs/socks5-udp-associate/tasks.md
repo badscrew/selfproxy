@@ -254,6 +254,7 @@
 
 
 
+
   - Log UDP ASSOCIATE connection establishment (INFO level)
   - Log relay endpoint details (DEBUG level)
   - Log packet encapsulation/decapsulation (VERBOSE level)
@@ -263,7 +264,10 @@
   - Never log payload data (privacy)
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 15. Checkpoint - Ensure all tests pass
+- [x] 15. Checkpoint - Ensure all tests pass
+
+
+
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 16. Write integration tests
