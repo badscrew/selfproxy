@@ -268,9 +268,14 @@
 
 
 
+
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 16. Write integration tests
+- [x] 16. Write integration tests
+
+
+
+
   - Create mock SOCKS5 server with UDP ASSOCIATE support
   - Test end-to-end UDP packet flow
   - Test bidirectional communication
@@ -278,21 +283,27 @@
   - Test error scenarios
   - _Requirements: 12.3, 12.4, 12.5_
 
-- [ ] 16.1 Write property test for bidirectional communication
+- [x] 16.1 Write property test for bidirectional communication
+
+
   - **Property 5: Bidirectional Communication Preservation**
   - **Validates: Requirements 4.3, 4.4, 4.5, 8.3**
   - Send UDP packet through SOCKS5
   - Simulate response from destination
   - Verify response is routed back to original source IP and port
 
-- [ ] 16.2 Write property test for WebRTC port handling
+- [x] 16.2 Write property test for WebRTC port handling
+
+
   - **Property 9: WebRTC Port Handling**
   - **Validates: Requirements 8.1, 8.2, 10.3**
   - Generate packets to WebRTC ports (3478-3479, 49152-65535)
   - Verify packets are routed through SOCKS5 UDP ASSOCIATE
   - Measure latency to ensure it's within acceptable range
 
-- [ ] 16.3 Write property test for concurrent connections
+- [x] 16.3 Write property test for concurrent connections
+
+
   - **Property 10: Concurrent Connection Independence**
   - **Validates: Requirements 8.4, 10.2**
   - Create multiple simultaneous UDP ASSOCIATE connections
