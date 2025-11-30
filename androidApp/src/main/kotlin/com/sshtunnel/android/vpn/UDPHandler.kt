@@ -392,20 +392,31 @@ class UDPHandler(
     }
     
     /**
-     * Queries a DNS server through SOCKS5 using DNS-over-TCP.
+     * Queries DNS using Android's native DNS resolver instead of SOCKS5.
      * 
-     * DNS-over-TCP format:
-     * - 2-byte length prefix (big-endian)
-     * - DNS query payload
+     * TEMPORARY IMPLEMENTATION:
+     * This is a workaround because JSch's SOCKS5 proxy doesn't support UDP ASSOCIATE,
+     * which is required for proper DNS tunneling. This implementation resolves DNS
+     * queries locally, which means DNS queries are NOT tunneled through the SSH server.
      * 
-     * Response format:
-     * - 2-byte length prefix (big-endian)
-     * - DNS response payload
+     * TODO: Implement proper DNS tunneling via UDP ASSOCIATE when SOCKS5 server supports it.
+     * See TODO.md #1 for details.
      * 
-     * @param dnsServer DNS server IP address
-     * @param dnsPort DNS server port (typically 53)
+     * SECURITY NOTE:
+     * This creates a DNS leak - DNS queries go directly to the system DNS servers
+     * instead of through the tunnel. This is a known limitation of the current
+     * implementation.
+     * 
+     * How it works:
+     * 1. Parse DNS query to extract the domain name
+     * 2. Use Android's InetAddress.getAllByName() to resolve
+     * 3. Construct a DNS response packet with the resolved IP addresses
+     * 4. Return the response to be sent back through the VPN
+     * 
+     * @param dnsServer DNS server IP address (ignored in this implementation)
+     * @param dnsPort DNS server port (ignored in this implementation)
      * @param query DNS query payload
-     * @return DNS response payload, or null if query failed or timed out
+     * @return DNS response payload, or null if query failed
      * 
      * Requirements: 7.2, 7.3, 7.4, 7.5
      */
@@ -414,87 +425,206 @@ class UDPHandler(
         dnsPort: Int,
         query: ByteArray
     ): ByteArray? = withContext(Dispatchers.IO) {
-        var socket: Socket? = null
         try {
-            logger.debug(TAG, "Connecting to DNS server $dnsServer:$dnsPort through SOCKS5")
+            logger.debug(TAG, "Resolving DNS query locally (SOCKS5 UDP not supported)")
             
-            // Connect to SOCKS5 proxy
-            socket = Socket()
-            socket.connect(InetSocketAddress("127.0.0.1", socksPort), DNS_TIMEOUT_MS)
-            socket.soTimeout = DNS_TIMEOUT_MS
-            
-            // Perform SOCKS5 handshake
-            if (!performSocks5Handshake(socket, dnsServer, dnsPort)) {
-                logger.error(TAG, "SOCKS5 handshake failed for DNS query")
+            // Parse DNS query to extract domain name
+            val domainName = parseDnsQuery(query)
+            if (domainName == null) {
+                logger.error(TAG, "Failed to parse DNS query")
                 return@withContext null
             }
             
-            val output = socket.getOutputStream()
-            val input = socket.getInputStream()
+            logger.info(TAG, "DNS query for domain: $domainName")
             
-            // Send DNS query with 2-byte length prefix (DNS-over-TCP format)
-            val queryLength = ByteBuffer.allocate(2).putShort(query.size.toShort()).array()
-            output.write(queryLength)
-            output.write(query)
-            output.flush()
-            
-            logger.debug(TAG, "Sent DNS query: ${query.size} bytes")
-            
-            // Read response length (2 bytes)
-            val responseLengthBytes = ByteArray(2)
-            val lengthRead = input.read(responseLengthBytes)
-            if (lengthRead != 2) {
-                logger.error(TAG, "Failed to read DNS response length")
+            // Resolve using Android's native DNS resolver
+            // This bypasses the tunnel but works with JSch's TCP-only SOCKS5
+            val addresses = try {
+                java.net.InetAddress.getAllByName(domainName)
+            } catch (e: java.net.UnknownHostException) {
+                logger.warn(TAG, "DNS resolution failed for $domainName: ${e.message}")
+                return@withContext null
+            } catch (e: Exception) {
+                logger.error(TAG, "DNS resolution error for $domainName: ${e.message}", e)
                 return@withContext null
             }
             
-            val responseLength = ByteBuffer.wrap(responseLengthBytes).short.toInt() and 0xFFFF
-            
-            // Validate response length
-            if (responseLength <= 0) {
-                logger.error(TAG, "Invalid DNS response length: $responseLength")
+            if (addresses.isEmpty()) {
+                logger.warn(TAG, "No addresses found for $domainName")
                 return@withContext null
             }
             
-            if (responseLength > MAX_DNS_RESPONSE_SIZE) {
-                logger.error(TAG, "DNS response too large: $responseLength bytes (max: $MAX_DNS_RESPONSE_SIZE)")
-                return@withContext null
-            }
+            logger.info(TAG, "Resolved $domainName to ${addresses.size} address(es)")
             
-            logger.debug(TAG, "Reading DNS response: $responseLength bytes")
+            // Construct DNS response packet
+            val response = constructDnsResponse(query, addresses)
             
-            // Read response data
-            val response = ByteArray(responseLength)
-            var totalRead = 0
-            while (totalRead < responseLength) {
-                val read = input.read(response, totalRead, responseLength - totalRead)
-                if (read <= 0) {
-                    logger.error(TAG, "Connection closed while reading DNS response")
-                    break
-                }
-                totalRead += read
-            }
-            
-            if (totalRead == responseLength) {
-                logger.debug(TAG, "DNS query successful: received $totalRead bytes")
-                response
+            if (response != null) {
+                logger.debug(TAG, "DNS response constructed: ${response.size} bytes")
             } else {
-                logger.error(TAG, "Incomplete DNS response: expected $responseLength, got $totalRead")
-                null
+                logger.error(TAG, "Failed to construct DNS response")
             }
             
-        } catch (e: java.net.SocketTimeoutException) {
-            logger.warn(TAG, "DNS query timed out after ${DNS_TIMEOUT_MS}ms")
-            null
+            response
+            
         } catch (e: Exception) {
             logger.error(TAG, "DNS query failed: ${e.message}", e)
             null
-        } finally {
-            try {
-                socket?.close()
-            } catch (e: Exception) {
-                logger.verbose(TAG, "Error closing DNS socket: ${e.message}")
+        }
+    }
+    
+    /**
+     * Parses a DNS query packet to extract the domain name.
+     * 
+     * DNS query format (simplified):
+     * - 12 bytes: DNS header
+     * - Variable: Question section with domain name
+     * 
+     * Domain name encoding:
+     * - Length-prefixed labels (e.g., 3www6google3com0)
+     * - Terminated with 0-length label
+     * 
+     * @param query DNS query packet
+     * @return Domain name, or null if parsing failed
+     */
+    private fun parseDnsQuery(query: ByteArray): String? {
+        try {
+            if (query.size < 13) {
+                return null
             }
+            
+            // Skip DNS header (12 bytes) and start reading question section
+            var offset = 12
+            val labels = mutableListOf<String>()
+            
+            while (offset < query.size) {
+                val length = query[offset].toInt() and 0xFF
+                
+                if (length == 0) {
+                    // End of domain name
+                    break
+                }
+                
+                if (length > 63 || offset + length >= query.size) {
+                    // Invalid label length
+                    return null
+                }
+                
+                offset++
+                val label = String(query, offset, length, Charsets.US_ASCII)
+                labels.add(label)
+                offset += length
+            }
+            
+            if (labels.isEmpty()) {
+                return null
+            }
+            
+            return labels.joinToString(".")
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "Error parsing DNS query: ${e.message}", e)
+            return null
+        }
+    }
+    
+    /**
+     * Constructs a DNS response packet from resolved IP addresses.
+     * 
+     * This creates a minimal DNS response with:
+     * - Original query ID and flags
+     * - Question section (copied from query)
+     * - Answer section with A records (IPv4) or AAAA records (IPv6)
+     * 
+     * @param query Original DNS query packet
+     * @param addresses Resolved IP addresses
+     * @return DNS response packet, or null if construction failed
+     */
+    private fun constructDnsResponse(
+        query: ByteArray,
+        addresses: Array<java.net.InetAddress>
+    ): ByteArray? {
+        try {
+            if (query.size < 12) {
+                return null
+            }
+            
+            val response = ByteBuffer.allocate(512) // Standard DNS packet size
+            
+            // Copy transaction ID (bytes 0-1)
+            response.put(query[0])
+            response.put(query[1])
+            
+            // Flags: Standard query response, no error
+            response.put(0x81.toByte()) // QR=1 (response), Opcode=0, AA=0, TC=0, RD=1
+            response.put(0x80.toByte()) // RA=1, Z=0, RCODE=0 (no error)
+            
+            // Question count (1)
+            response.putShort(1)
+            
+            // Answer count (number of addresses)
+            response.putShort(addresses.size.toShort())
+            
+            // Authority RR count (0)
+            response.putShort(0)
+            
+            // Additional RR count (0)
+            response.putShort(0)
+            
+            // Copy question section from query
+            // Find the end of question section (after domain name and query type/class)
+            var questionEnd = 12
+            while (questionEnd < query.size) {
+                val length = query[questionEnd].toInt() and 0xFF
+                if (length == 0) {
+                    questionEnd += 5 // 0-byte + 2 bytes type + 2 bytes class
+                    break
+                }
+                questionEnd += length + 1
+            }
+            
+            if (questionEnd > query.size) {
+                return null
+            }
+            
+            // Copy question section
+            response.put(query, 12, questionEnd - 12)
+            
+            // Add answer records
+            for (address in addresses) {
+                val addressBytes = address.address
+                
+                // Name: pointer to question (0xC00C)
+                response.putShort(0xC00C.toShort())
+                
+                // Type: A (1) for IPv4, AAAA (28) for IPv6
+                val type = if (addressBytes.size == 4) 1 else 28
+                response.putShort(type.toShort())
+                
+                // Class: IN (1)
+                response.putShort(1)
+                
+                // TTL: 60 seconds
+                response.putInt(60)
+                
+                // Data length
+                response.putShort(addressBytes.size.toShort())
+                
+                // Address data
+                response.put(addressBytes)
+            }
+            
+            // Return the constructed response
+            val responseSize = response.position()
+            val responseBytes = ByteArray(responseSize)
+            response.rewind()
+            response.get(responseBytes)
+            
+            return responseBytes
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "Error constructing DNS response: ${e.message}", e)
+            return null
         }
     }
     
