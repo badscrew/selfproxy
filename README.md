@@ -4,6 +4,10 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.21-purple.svg)](https://kotlinlang.org/)
 [![Android](https://img.shields.io/badge/Android-API%2026+-green.svg)](https://developer.android.com/)
 
+> **⚠️ EXPERIMENTAL / BETA SOFTWARE**
+>
+> This project is in active development and should be considered experimental and beta-grade. While functional, it may contain bugs, incomplete features, or unexpected behavior. Use with understanding that issues may arise, and always test thoroughly in non-critical environments before relying on it for important use cases. Contributions, bug reports, and feedback are welcome as we work toward a stable release.
+
 A mobile application (initially Android, with future iOS support planned) that enables users to route their mobile device's internet traffic through their own SSH servers using SOCKS5 proxy tunneling.
 
 ## Features
