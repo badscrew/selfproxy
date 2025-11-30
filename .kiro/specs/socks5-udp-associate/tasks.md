@@ -315,6 +315,7 @@
 
 
 
+
   - Test SOCKS5 message construction
   - Test address encoding (IPv4)
   - Test port encoding (big-endian)
@@ -322,7 +323,10 @@
   - Test error code mapping
   - _Requirements: 12.1, 12.2_
 
-- [ ] 18. Performance testing and optimization
+- [x] 18. Performance testing and optimization
+
+
+
   - Measure latency for UDP packet forwarding
   - Verify latency is under 10ms (excluding network)
   - Test with multiple concurrent connections
