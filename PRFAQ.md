@@ -6,6 +6,8 @@
 
 ### Introducing SSH Tunnel Proxy: Your Personal VPN, Your Rules
 
+> **Note:** This is an experimental beta release. The software is functional but may contain bugs or incomplete features. Use with understanding of possible issues.
+
 **[City, Date]** — Today we're launching SSH Tunnel Proxy, an Android application that puts you in complete control of your mobile internet privacy. Unlike traditional VPN services that require monthly subscriptions and trust in third-party providers, SSH Tunnel Proxy lets you use your own SSH server as a secure SOCKS5 proxy.
 
 **Your Server, Your Privacy**
@@ -18,12 +20,16 @@ Simply provide your SSH server address and private key, and SSH Tunnel Proxy han
 
 **Key Features**
 
+- **Full Traffic Routing**: Routes all TCP and UDP traffic through your SSH server
+- **Video Calling Support**: Works with WhatsApp, Telegram, Zoom, Discord via UDP ASSOCIATE
 - **Bring Your Own Server**: Use any SSH server you control or have access to
 - **Multiple Profiles**: Save and switch between different SSH servers instantly
-- **Per-App Routing**: Choose which apps use the tunnel (requires root or VPN mode)
+- **Per-App Routing**: Choose which apps use the tunnel using Android VPN API
+- **DNS Privacy**: All DNS queries routed through tunnel to prevent leaks
 - **Connection Monitoring**: Real-time bandwidth usage and connection status
 - **Auto-Reconnect**: Seamless reconnection when switching networks
-- **Open Source**: Full transparency with publicly available source code
+- **Private Key Authentication**: Secure authentication with RSA, ECDSA, or Ed25519 keys
+- **Open Source**: Full transparency with publicly available source code (Apache 2.0 license)
 
 **Who It's For**
 
@@ -31,9 +37,9 @@ SSH Tunnel Proxy is perfect for developers, system administrators, privacy enthu
 
 **Availability**
 
-SSH Tunnel Proxy is available now on Google Play Store and as a direct APK download. The app is free and open source under the MIT license.
+SSH Tunnel Proxy is currently in beta and available as open source on GitHub. The app is free and open source under the Apache 2.0 license. Parts of this project were developed using agentic coding with AI assistance.
 
-For more information, visit [website] or download from [Play Store link].
+For more information, visit https://github.com/badscrew/selfproxy
 
 ---
 
@@ -65,7 +71,7 @@ A: The app supports private key authentication only (RSA, ECDSA, Ed25519), inclu
 
 **Q: Does this require root access?**
 
-A: No. The app works without root by using Android's VPN API to route traffic through the SOCKS5 proxy. However, root access enables additional features like per-app proxying without VPN mode.
+A: No. The app works without root by using Android's VPN API to route all traffic through the SOCKS5 proxy. Per-app routing is available through the VPN API without requiring root access.
 
 **Q: What happens if my SSH connection drops?**
 
@@ -73,7 +79,7 @@ A: The app includes auto-reconnect functionality. If the connection drops, it wi
 
 **Q: Can I use this with any SSH server?**
 
-A: Yes, as long as you have SSH access (port 22 or custom port) and the server allows port forwarding. Most standard SSH servers work out of the box.
+A: Yes, as long as you have SSH access (port 22 or custom port) and the server allows port forwarding. For full functionality including video calling, your SSH server must support SOCKS5 UDP ASSOCIATE (RFC 1928). OpenSSH supports this by default.
 
 **Q: Does this work on mobile data and WiFi?**
 
@@ -122,15 +128,19 @@ A: Yes. You can save unlimited server profiles and switch between them with a si
 
 **Q: Can I route only specific apps through the tunnel?**
 
-A: Yes, with limitations. In VPN mode (non-root), you can exclude apps from the tunnel. With root access, you have more granular per-app control.
+A: Yes. Using Android's VPN API, you can exclude specific apps from the tunnel. By default, all apps use the tunnel, but you can configure exceptions in the app settings.
+
+**Q: Does this work with video calling apps?**
+
+A: Yes! The app supports UDP traffic through SOCKS5 UDP ASSOCIATE, enabling video calling apps like WhatsApp, Telegram, Zoom, Discord, Microsoft Teams, and Google Meet to work through the tunnel. Your SSH server must support UDP ASSOCIATE (OpenSSH does by default).
 
 **Q: Does this work with IPv6?**
 
-A: IPv6 support depends on your SSH server configuration. The app supports IPv6 if your server does.
+A: IPv6 support depends on your SSH server configuration. The app currently focuses on IPv4 traffic routing.
 
-**Q: Will you support HTTP proxy in addition to SOCKS5?**
+**Q: What about DNS leaks?**
 
-A: Currently, the app uses SOCKS5 proxy, which works well with SSH's native dynamic port forwarding. HTTP proxy support is being considered for future releases to provide additional compatibility options for specific use cases.
+A: The app routes all DNS queries through the tunnel to prevent DNS leaks. You can verify this using DNS leak test websites.
 
 ### Troubleshooting Questions
 
@@ -153,11 +163,15 @@ A: Try:
 
 **Q: Some apps don't work with the proxy. Why?**
 
-A: Some apps detect proxy usage and refuse to work, or they may use protocols that don't work well with SOCKS5. You can exclude these apps from the tunnel in settings.
+A: Some apps may detect VPN usage and refuse to work (e.g., certain banking apps or streaming services). You can exclude these apps from the tunnel in settings. Most apps, including video calling apps, work without issues.
 
 **Q: Is there a desktop version?**
 
-A: Currently, SSH Tunnel Proxy is Android-only. However, desktop operating systems have built-in SSH clients that can create similar tunnels using command-line tools.
+A: Currently, SSH Tunnel Proxy is Android-only. The project uses Kotlin Multiplatform, which makes iOS support possible in the future. Desktop operating systems have built-in SSH clients that can create similar tunnels using command-line tools.
+
+**Q: Is this project stable and production-ready?**
+
+A: The project is currently in experimental beta. Core functionality works, including TCP/UDP routing and video calling support, but you should expect possible bugs or issues. Test thoroughly before relying on it for critical use cases. Contributions and bug reports are welcome!
 
 ---
 
@@ -170,3 +184,5 @@ A: Currently, SSH Tunnel Proxy is Android-only. However, desktop operating syste
 *"I set up a Raspberry Pi at home as my SSH server. Now I can access my home network securely from anywhere, and it doubles as my mobile VPN."* — James T., System Administrator
 
 *"The per-app routing is a game changer. I can tunnel just my browser while keeping other apps on the regular connection."* — Maria G., Security Researcher
+
+*"I was skeptical about video calls working through a VPN, but WhatsApp calls work perfectly. The UDP ASSOCIATE implementation is solid."* — David L., Network Engineer
