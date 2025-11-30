@@ -373,6 +373,132 @@ class UDPHandler(
     }
     
     /**
+     * Decapsulates a SOCKS5 UDP response packet.
+     * 
+     * SOCKS5 UDP response header format:
+     * +----+------+------+----------+----------+----------+
+     * |RSV | FRAG | ATYP | SRC.ADDR | SRC.PORT |   DATA   |
+     * +----+------+------+----------+----------+----------+
+     * | 2  |  1   |  1   | Variable |    2     | Variable |
+     * +----+------+------+----------+----------+----------+
+     * 
+     * - RSV: Reserved (must be 0x0000)
+     * - FRAG: Fragment number (must be 0x00, fragmentation not supported)
+     * - ATYP: Address type (0x01 = IPv4, 0x03 = Domain, 0x04 = IPv6)
+     * - SRC.ADDR: Source address (4 bytes for IPv4, 16 bytes for IPv6)
+     * - SRC.PORT: Source port (2 bytes, big-endian)
+     * - DATA: UDP payload
+     * 
+     * @param socks5Packet Complete SOCKS5 UDP packet received from relay
+     * @return UdpDecapsulatedPacket with source address, port, and payload, or null if invalid
+     * 
+     * Requirements: 4.1, 4.2, 7.3
+     */
+    fun decapsulateUdpPacket(socks5Packet: ByteArray): UdpDecapsulatedPacket? {
+        try {
+            // Minimum packet size: RSV(2) + FRAG(1) + ATYP(1) + ADDR(4 for IPv4) + PORT(2) = 10 bytes
+            if (socks5Packet.size < 10) {
+                logger.verbose(TAG, "SOCKS5 UDP packet too short: ${socks5Packet.size} bytes")
+                return null
+            }
+            
+            // Validate RSV (bytes 0-1) = 0x0000
+            val rsvHigh = socks5Packet[0].toInt() and 0xFF
+            val rsvLow = socks5Packet[1].toInt() and 0xFF
+            if (rsvHigh != 0x00 || rsvLow != 0x00) {
+                logger.verbose(TAG, "Invalid RSV field: 0x${rsvHigh.toString(16)}${rsvLow.toString(16)}")
+                return null
+            }
+            
+            // Validate FRAG (byte 2) = 0x00 (no fragmentation)
+            val frag = socks5Packet[2].toInt() and 0xFF
+            if (frag != 0x00) {
+                logger.verbose(TAG, "Fragmentation not supported: FRAG=0x${frag.toString(16)}")
+                return null
+            }
+            
+            // Parse ATYP (byte 3)
+            val atyp = socks5Packet[3].toInt() and 0xFF
+            
+            // Parse source address based on ATYP
+            val (sourceIp, addressLength) = when (atyp) {
+                0x01 -> {
+                    // IPv4 address (4 bytes)
+                    if (socks5Packet.size < 10) {
+                        logger.verbose(TAG, "Packet too short for IPv4 address")
+                        return null
+                    }
+                    val addr = socks5Packet.copyOfRange(4, 8)
+                    val ip = java.net.InetAddress.getByAddress(addr).hostAddress
+                    Pair(ip ?: "0.0.0.0", 4)
+                }
+                0x03 -> {
+                    // Domain name (first byte is length)
+                    if (socks5Packet.size < 5) {
+                        logger.verbose(TAG, "Packet too short for domain name length")
+                        return null
+                    }
+                    val domainLength = socks5Packet[4].toInt() and 0xFF
+                    if (socks5Packet.size < 5 + domainLength + 2) {
+                        logger.verbose(TAG, "Packet too short for domain name")
+                        return null
+                    }
+                    val domainBytes = socks5Packet.copyOfRange(5, 5 + domainLength)
+                    val domain = String(domainBytes, Charsets.US_ASCII)
+                    Pair(domain, 1 + domainLength)
+                }
+                0x04 -> {
+                    // IPv6 address (16 bytes)
+                    if (socks5Packet.size < 22) {
+                        logger.verbose(TAG, "Packet too short for IPv6 address")
+                        return null
+                    }
+                    val addr = socks5Packet.copyOfRange(4, 20)
+                    val ip = java.net.InetAddress.getByAddress(addr).hostAddress
+                    Pair(ip ?: "::", 16)
+                }
+                else -> {
+                    logger.verbose(TAG, "Unknown address type: 0x${atyp.toString(16)}")
+                    return null
+                }
+            }
+            
+            // Parse source port (2 bytes, big-endian)
+            val portOffset = 4 + addressLength
+            if (socks5Packet.size < portOffset + 2) {
+                logger.verbose(TAG, "Packet too short for port")
+                return null
+            }
+            
+            val sourcePort = ((socks5Packet[portOffset].toInt() and 0xFF) shl 8) or
+                            (socks5Packet[portOffset + 1].toInt() and 0xFF)
+            
+            // Extract payload (remaining bytes)
+            val payloadOffset = portOffset + 2
+            val payload = if (payloadOffset < socks5Packet.size) {
+                socks5Packet.copyOfRange(payloadOffset, socks5Packet.size)
+            } else {
+                ByteArray(0)
+            }
+            
+            logger.verbose(
+                TAG,
+                "Decapsulated UDP packet: $sourceIp:$sourcePort, payload size: ${payload.size}"
+            )
+            
+            return UdpDecapsulatedPacket(
+                sourceIp = sourceIp,
+                sourcePort = sourcePort,
+                payload = payload
+            )
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "Error decapsulating UDP packet: ${e.message}", e)
+            return null
+        }
+    }
+    
+    /**
      * Encapsulates a UDP datagram with SOCKS5 UDP header.
      * 
      * SOCKS5 UDP request header format:

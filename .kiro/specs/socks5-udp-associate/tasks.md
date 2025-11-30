@@ -57,6 +57,7 @@
 
 
 
+
   - Create encapsulateUdpPacket() method
   - Build SOCKS5 UDP header: RSV(0x0000), FRAG(0x00), ATYP, DST.ADDR, DST.PORT
   - Support IPv4 addresses (ATYP=0x01)
@@ -73,6 +74,9 @@
   - Verify encapsulated packets have valid SOCKS5 headers
   - Verify RSV=0x0000, FRAG=0x00, correct ATYP
   - Verify payload is preserved
+- [x] 5. Implement UDP packet decapsulation
+
+
 
 - [ ] 5. Implement UDP packet decapsulation
 
@@ -85,7 +89,9 @@
   - Return UdpDecapsulatedPacket or null if invalid
   - _Requirements: 4.1, 4.2, 7.3_
 
-- [ ] 5.1 Write property test for UDP decapsulation
+- [x] 5.1 Write property test for UDP decapsulation
+
+
   - **Property 3: UDP Decapsulation Correctness**
   - **Validates: Requirements 4.1, 4.2, 4.3**
   - Generate random SOCKS5 UDP packets
