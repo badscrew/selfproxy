@@ -327,6 +327,7 @@
 
 
 
+
   - Measure latency for UDP packet forwarding
   - Verify latency is under 10ms (excluding network)
   - Test with multiple concurrent connections
@@ -334,7 +335,12 @@
   - Profile hot paths and optimize if needed
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 19. Update documentation
+- [x] 19. Update documentation
+
+
+
+
+
   - Add code comments for all new methods
   - Document SOCKS5 UDP ASSOCIATE protocol in comments
   - Update README with video calling support
