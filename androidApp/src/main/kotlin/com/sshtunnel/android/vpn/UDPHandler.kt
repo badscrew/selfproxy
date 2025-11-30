@@ -373,6 +373,83 @@ class UDPHandler(
     }
     
     /**
+     * Encapsulates a UDP datagram with SOCKS5 UDP header.
+     * 
+     * SOCKS5 UDP request header format:
+     * +----+------+------+----------+----------+----------+
+     * |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+     * +----+------+------+----------+----------+----------+
+     * | 2  |  1   |  1   | Variable |    2     | Variable |
+     * +----+------+------+----------+----------+----------+
+     * 
+     * - RSV: Reserved (0x0000)
+     * - FRAG: Fragment number (0x00 = no fragmentation)
+     * - ATYP: Address type (0x01 = IPv4, 0x03 = Domain, 0x04 = IPv6)
+     * - DST.ADDR: Destination address (4 bytes for IPv4)
+     * - DST.PORT: Destination port (2 bytes, big-endian)
+     * - DATA: Original UDP payload
+     * 
+     * @param destIp Destination IP address
+     * @param destPort Destination port
+     * @param payload Original UDP payload
+     * @return Complete encapsulated datagram ready to send to relay endpoint
+     * 
+     * Requirements: 3.1, 3.2, 3.5, 11.2, 11.3
+     */
+    fun encapsulateUdpPacket(
+        destIp: String,
+        destPort: Int,
+        payload: ByteArray
+    ): ByteArray {
+        try {
+            // Parse destination IP address
+            val ipBytes = java.net.InetAddress.getByName(destIp).address
+            
+            // Determine address type based on IP address length
+            val atyp: Byte = when (ipBytes.size) {
+                4 -> 0x01  // IPv4
+                16 -> 0x04 // IPv6
+                else -> throw IllegalArgumentException("Invalid IP address: $destIp")
+            }
+            
+            // Build SOCKS5 UDP header
+            val header = ByteBuffer.allocate(4 + ipBytes.size + 2).apply {
+                // RSV: Reserved (2 bytes, must be 0x0000)
+                put(0x00)
+                put(0x00)
+                
+                // FRAG: Fragment number (1 byte, 0x00 = no fragmentation)
+                put(0x00)
+                
+                // ATYP: Address type (1 byte)
+                put(atyp)
+                
+                // DST.ADDR: Destination address (4 bytes for IPv4, 16 bytes for IPv6)
+                put(ipBytes)
+                
+                // DST.PORT: Destination port (2 bytes, big-endian)
+                putShort(destPort.toShort())
+            }.array()
+            
+            // Combine header and payload
+            val encapsulated = header + payload
+            
+            logger.verbose(
+                TAG,
+                "Encapsulated UDP packet: $destIp:$destPort, " +
+                "header size: ${header.size}, payload size: ${payload.size}, " +
+                "total size: ${encapsulated.size}"
+            )
+            
+            return encapsulated
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "Error encapsulating UDP packet: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    /**
      * Performs SOCKS5 UDP ASSOCIATE handshake on the control connection.
      * 
      * UDP ASSOCIATE handshake steps:

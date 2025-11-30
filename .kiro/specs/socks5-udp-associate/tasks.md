@@ -34,6 +34,7 @@
 
 
 
+
   - Create performUdpAssociateHandshake() method
   - Build UDP ASSOCIATE request message (VER=0x05, CMD=0x03, ATYP, DST.ADDR, DST.PORT)
   - Send request on TCP control socket
@@ -51,7 +52,11 @@
   - Verify handshake produces valid relay endpoint with non-zero port
   - Test with mock SOCKS5 server responses
 
-- [ ] 4. Implement UDP packet encapsulation
+- [x] 4. Implement UDP packet encapsulation
+
+
+
+
   - Create encapsulateUdpPacket() method
   - Build SOCKS5 UDP header: RSV(0x0000), FRAG(0x00), ATYP, DST.ADDR, DST.PORT
   - Support IPv4 addresses (ATYP=0x01)
@@ -59,7 +64,9 @@
   - Return complete encapsulated datagram
   - _Requirements: 3.1, 3.2, 3.5, 11.2, 11.3_
 
-- [ ] 4.1 Write property test for UDP encapsulation
+- [x] 4.1 Write property test for UDP encapsulation
+
+
   - **Property 2: UDP Encapsulation Format Compliance**
   - **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 11.1, 11.2, 11.3**
   - Generate random IP addresses, ports, and payloads
@@ -68,6 +75,7 @@
   - Verify payload is preserved
 
 - [ ] 5. Implement UDP packet decapsulation
+
   - Create decapsulateUdpPacket() method
   - Parse SOCKS5 UDP response header
   - Validate RSV=0x0000 and FRAG=0x00
@@ -85,6 +93,7 @@
   - Test round-trip: encapsulate then decapsulate should preserve data
 
 - [ ] 6. Implement establishUdpAssociate() method
+
   - Create TCP control socket to SOCKS5 proxy
   - Perform initial SOCKS5 greeting (VER=0x05, NMETHODS=0x01, METHOD=0x00)
   - Call performUdpAssociateHandshake() to get relay endpoint
@@ -95,6 +104,7 @@
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1_
 
 - [ ] 7. Implement sendUdpThroughSocks5() method
+
   - Encapsulate UDP packet with SOCKS5 header
   - Create DatagramPacket with encapsulated data
   - Set destination to relay endpoint (BND.ADDR:BND.PORT)
@@ -105,6 +115,7 @@
   - _Requirements: 3.5, 5.1, 9.1, 9.4_
 
 - [ ] 8. Implement startUdpReader() coroutine
+
   - Launch coroutine in IO dispatcher
   - Create receive buffer (max UDP size: 65507 bytes)
   - Loop: receive datagram from relay socket with timeout
@@ -117,6 +128,7 @@
   - _Requirements: 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5, 9.2_
 
 - [ ] 9. Implement handleGenericUdpPacket() method
+
   - Create ConnectionKey from packet 5-tuple
   - Check if UDP ASSOCIATE connection exists for this key
   - If exists: reuse connection, send packet through it
@@ -133,6 +145,7 @@
   - Verify all packets use the same connection
 
 - [ ] 10. Update handleUdpPacket() to route non-DNS traffic
+
   - Modify existing handleUdpPacket() method
   - Keep existing DNS handling (isDnsQuery check)
   - Add else branch to call handleGenericUdpPacket() for non-DNS
