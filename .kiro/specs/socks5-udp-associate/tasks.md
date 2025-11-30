@@ -152,6 +152,7 @@
 
 
 
+
   - Create ConnectionKey from packet 5-tuple
   - Check if UDP ASSOCIATE connection exists for this key
   - If exists: reuse connection, send packet through it
@@ -169,7 +170,10 @@
   - Verify only one connection is created
   - Verify all packets use the same connection
 
-- [ ] 10. Update handleUdpPacket() to route non-DNS traffic
+- [x] 10. Update handleUdpPacket() to route non-DNS traffic
+
+
+
 
   - Modify existing handleUdpPacket() method
   - Keep existing DNS handling (isDnsQuery check)
