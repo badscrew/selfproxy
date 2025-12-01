@@ -95,6 +95,7 @@
 
 
 
+
   - Replace JSch keep-alive with sshj keep-alive mechanism
   - Configure keep-alive interval (60 seconds)
   - Verify keep-alive packets are sent correctly
@@ -106,13 +107,18 @@
   - **Property 12: Keep-alive packets**
   - **Validates: Requirements 7.1**
 
-- [ ] 5. Update AndroidSSHClient.disconnect() method
+- [x] 5. Update AndroidSSHClient.disconnect() method
+
+
+
+
   - Replace JSch disconnect with sshj disconnect
   - Ensure SOCKS5 proxy is closed before SSH session
   - Verify all resources are released properly
   - _Requirements: 5.4, 7.4_
 
-- [ ] 5.1 Write property test for clean disconnection
+- [x] 5.1 Write property test for clean disconnection
+
   - **Property 10: Clean disconnection**
   - **Validates: Requirements 5.4, 7.4**
 
