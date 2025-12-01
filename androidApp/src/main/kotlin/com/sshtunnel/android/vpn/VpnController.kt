@@ -36,6 +36,9 @@ class VpnController @Inject constructor(
     private var isVpnActive = false
     private var currentSocksPort: Int = 0
     
+    private val _vpnActiveState = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val vpnActiveState: kotlinx.coroutines.flow.StateFlow<Boolean> = _vpnActiveState
+    
     companion object {
         private const val TAG = "VpnController"
         private const val VPN_START_RETRY_DELAY_MS = 1000L
@@ -49,15 +52,18 @@ class VpnController @Inject constructor(
                     android.util.Log.w(TAG, "VPN error received, marking as inactive")
                     isVpnActive = false
                     currentSocksPort = 0
+                    _vpnActiveState.value = false
                 }
                 TunnelVpnService.ACTION_VPN_STOPPED -> {
                     android.util.Log.i(TAG, "VPN stopped received, marking as inactive")
                     isVpnActive = false
                     currentSocksPort = 0
+                    _vpnActiveState.value = false
                 }
                 TunnelVpnService.ACTION_VPN_STARTED -> {
                     android.util.Log.i(TAG, "VPN started successfully")
                     isVpnActive = true
+                    _vpnActiveState.value = true
                 }
             }
         }
@@ -191,10 +197,15 @@ class VpnController @Inject constructor(
         scope.launch {
             val state = connectionManager.observeConnectionState().value
             if (state is ConnectionState.Connected) {
-                android.util.Log.i(TAG, "Manually retrying VPN start")
+                android.util.Log.i(TAG, "Manually retrying VPN start after permission granted")
+                // Reset VPN state before retry to ensure clean start
+                isVpnActive = false
+                currentSocksPort = 0
+                // Small delay to ensure previous service instance is fully stopped
+                delay(500)
                 startVpn(state.connection.socksPort, state.connection.serverAddress)
             } else {
-                android.util.Log.w(TAG, "Cannot retry VPN start - no active SSH connection")
+                android.util.Log.w(TAG, "Cannot retry VPN start - no active SSH connection (state: $state)")
             }
         }
     }

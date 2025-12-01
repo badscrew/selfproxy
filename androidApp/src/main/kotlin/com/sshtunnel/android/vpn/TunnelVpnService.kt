@@ -100,7 +100,15 @@ class TunnelVpnService : VpnService() {
                 android.util.Log.i(TAG, "TUN interface created successfully")
                 
                 // Start foreground service with notification
-                startForeground(NOTIFICATION_ID, createNotification(serverAddress))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        createNotification(serverAddress),
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, createNotification(serverAddress))
+                }
                 
                 // Start packet routing
                 val inputStream = FileInputStream(vpnInterface!!.fileDescriptor)
@@ -149,6 +157,7 @@ class TunnelVpnService : VpnService() {
     private fun broadcastVpnError(errorMessage: String) {
         android.util.Log.e(TAG, "Broadcasting VPN error: $errorMessage")
         val intent = Intent(ACTION_VPN_ERROR).apply {
+            setPackage(packageName) // Make broadcast explicit for Android 8.0+
             putExtra(EXTRA_ERROR_MESSAGE, errorMessage)
         }
         sendBroadcast(intent)
@@ -159,7 +168,9 @@ class TunnelVpnService : VpnService() {
      */
     private fun broadcastVpnStarted() {
         android.util.Log.d(TAG, "Broadcasting VPN started")
-        val intent = Intent(ACTION_VPN_STARTED)
+        val intent = Intent(ACTION_VPN_STARTED).apply {
+            setPackage(packageName) // Make broadcast explicit for Android 8.0+
+        }
         sendBroadcast(intent)
     }
     
@@ -168,7 +179,9 @@ class TunnelVpnService : VpnService() {
      */
     private fun broadcastVpnStopped() {
         android.util.Log.d(TAG, "Broadcasting VPN stopped")
-        val intent = Intent(ACTION_VPN_STOPPED)
+        val intent = Intent(ACTION_VPN_STOPPED).apply {
+            setPackage(packageName) // Make broadcast explicit for Android 8.0+
+        }
         sendBroadcast(intent)
     }
     

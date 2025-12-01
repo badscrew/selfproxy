@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Include the database -->
+    <include domain="database" path="." />
+    
+    <!-- Include shared preferences -->
+    <include domain="sharedpref" path="." />
+    
+    <!-- Exclude cache -->
+    <exclude domain="cache" path="." />
+    
+    <!-- Exclude temporary files -->
+    <exclude domain="file" path="temp" />
+</full-backup-content>

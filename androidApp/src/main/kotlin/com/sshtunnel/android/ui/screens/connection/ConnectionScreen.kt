@@ -360,6 +360,38 @@ private fun ConnectedContent(
         
         Spacer(modifier = Modifier.height(8.dp))
         
+        // SOCKS5 Test button
+        var showSocksTest by remember { mutableStateOf(false) }
+        
+        OutlinedButton(
+            onClick = { showSocksTest = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Test SOCKS5 Proxy")
+        }
+        
+        // Show test dialog
+        if (showSocksTest) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showSocksTest = false }
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f),
+                    shape = MaterialTheme.shapes.large,
+                    tonalElevation = 8.dp
+                ) {
+                    com.sshtunnel.android.testing.JSchSocksTestScreen(
+                        socksPort = connection.socksPort,
+                        onBack = { showSocksTest = false }
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
         // App routing button
         profile?.let { prof ->
             onNavigateToAppRouting?.let { navigate ->

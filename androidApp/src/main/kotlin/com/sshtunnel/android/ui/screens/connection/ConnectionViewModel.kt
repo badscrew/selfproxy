@@ -126,6 +126,19 @@ class ConnectionViewModel @Inject constructor(
                 updateUiState(state)
             }
         }
+        
+        // Observe VPN state changes
+        viewModelScope.launch {
+            val app = context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp
+            app.vpnController.vpnActiveState.collect { isActive ->
+                logger.info(TAG, "VPN state changed: ${if (isActive) "Active" else "Inactive"}")
+                if (isActive) {
+                    onVpnStarted()
+                } else {
+                    onVpnStopped()
+                }
+            }
+        }
     }
     
     /**
