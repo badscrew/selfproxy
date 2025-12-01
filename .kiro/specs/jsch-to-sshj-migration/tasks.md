@@ -112,6 +112,7 @@
 
 
 
+
   - Replace JSch disconnect with sshj disconnect
   - Ensure SOCKS5 proxy is closed before SSH session
   - Verify all resources are released properly
@@ -122,13 +123,19 @@
   - **Property 10: Clean disconnection**
   - **Validates: Requirements 5.4, 7.4**
 
-- [ ] 6. Update exception mapping
+- [x] 6. Update exception mapping
+
+
+
+
   - Map sshj exceptions to ConnectionError types
   - Maintain user-friendly error messages
   - Ensure all error categories are covered
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 6.1 Write property test for exception mapping
+- [x] 6.1 Write property test for exception mapping
+
+
   - **Property 11: Exception mapping**
   - **Validates: Requirements 6.1**
 
