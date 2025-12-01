@@ -31,6 +31,9 @@ class AndroidSSHClient(
         private const val TAG = "AndroidSSHClient"
     }
     
+    // Track SOCKS5 server sockets for cleanup
+    private val socks5Servers = mutableMapOf<String, java.net.ServerSocket>()
+    
     override suspend fun connect(
         profile: ServerProfile,
         privateKey: PrivateKey,
@@ -186,28 +189,329 @@ class AndroidSSHClient(
                 )
             }
             
-            // Set up dynamic port forwarding (SOCKS5)
-            // sshj doesn't have built-in SOCKS5 support like JSch's setPortForwardingL
-            // We need to create a local port forwarder manually
-            logger.verbose(TAG, "Setting up dynamic port forwarding (SOCKS5) on 127.0.0.1:$localPort")
-            
-            // Create a server socket for the SOCKS5 proxy
-            val serverSocket = java.net.ServerSocket(localPort, 50, java.net.InetAddress.getByName("127.0.0.1"))
+            // Create SOCKS5 server socket bound to localhost only
+            logger.verbose(TAG, "Creating SOCKS5 server socket on 127.0.0.1:$localPort")
+            val serverSocket = java.net.ServerSocket(
+                localPort,
+                50, // backlog
+                java.net.InetAddress.getByName("127.0.0.1")
+            )
             val actualPort = serverSocket.localPort
+            logger.info(TAG, "SOCKS5 server socket created on port $actualPort")
             
-            // TODO: Implement SOCKS5 proxy using sshj's port forwarding
-            // For now, just return the port - full SOCKS5 implementation will be in task 3
-            logger.info(TAG, "SOCKS5 proxy socket created on port $actualPort (full implementation pending)")
+            // Track server socket for cleanup
+            socks5Servers[session.sessionId] = serverSocket
+            
+            // Start SOCKS5 server in background
+            startSocks5Server(serverSocket, ssh)
             
             Result.success(actualPort)
             
         } catch (e: IOException) {
             logger.error(TAG, "Failed to create port forwarding: ${e.message}", e)
-            Result.failure(SSHError.Unknown("Failed to create port forwarding", e))
+            Result.failure(SSHError.PortForwardingDisabled("Failed to create port forwarding: ${e.message}"))
         } catch (e: Exception) {
             logger.error(TAG, "Unexpected error creating port forwarding", e)
             Result.failure(SSHError.Unknown("Failed to create port forwarding", e))
         }
+    }
+    
+    /**
+     * Starts a SOCKS5 server that accepts connections and forwards them through SSH.
+     */
+    private fun startSocks5Server(serverSocket: java.net.ServerSocket, ssh: SshjClient) {
+        Thread {
+            logger.info(TAG, "SOCKS5 server thread started on port ${serverSocket.localPort}")
+            try {
+                while (!serverSocket.isClosed && ssh.isConnected) {
+                    try {
+                        val clientSocket = serverSocket.accept()
+                        logger.verbose(TAG, "SOCKS5 client connected from ${clientSocket.inetAddress}")
+                        
+                        // Handle each client in a separate thread
+                        Thread {
+                            handleSocks5Client(clientSocket, ssh)
+                        }.start()
+                    } catch (e: java.net.SocketException) {
+                        if (!serverSocket.isClosed) {
+                            logger.error(TAG, "Socket error accepting SOCKS5 connection", e)
+                        }
+                    } catch (e: Exception) {
+                        logger.error(TAG, "Error accepting SOCKS5 connection", e)
+                    }
+                }
+            } finally {
+                logger.info(TAG, "SOCKS5 server thread stopping")
+                try {
+                    serverSocket.close()
+                } catch (e: Exception) {
+                    logger.error(TAG, "Error closing SOCKS5 server socket", e)
+                }
+            }
+        }.start()
+    }
+    
+    /**
+     * Handles a single SOCKS5 client connection.
+     */
+    private fun handleSocks5Client(clientSocket: java.net.Socket, ssh: SshjClient) {
+        try {
+            clientSocket.soTimeout = 30000 // 30 second timeout
+            val input = clientSocket.getInputStream()
+            val output = clientSocket.getOutputStream()
+            
+            // SOCKS5 handshake - read greeting
+            val greeting = ByteArray(2)
+            if (input.read(greeting) != 2) {
+                logger.warn(TAG, "SOCKS5: Invalid greeting length")
+                clientSocket.close()
+                return
+            }
+            
+            val version = greeting[0].toInt() and 0xFF
+            val nmethods = greeting[1].toInt() and 0xFF
+            
+            if (version != 5) {
+                logger.warn(TAG, "SOCKS5: Unsupported version $version")
+                clientSocket.close()
+                return
+            }
+            
+            // Read authentication methods
+            val methods = ByteArray(nmethods)
+            if (input.read(methods) != nmethods) {
+                logger.warn(TAG, "SOCKS5: Invalid methods length")
+                clientSocket.close()
+                return
+            }
+            
+            // Send method selection (0x00 = no authentication)
+            output.write(byteArrayOf(0x05, 0x00))
+            output.flush()
+            logger.verbose(TAG, "SOCKS5: Handshake complete, no authentication")
+            
+            // Read CONNECT request
+            val request = ByteArray(4)
+            if (input.read(request) != 4) {
+                logger.warn(TAG, "SOCKS5: Invalid request length")
+                clientSocket.close()
+                return
+            }
+            
+            val reqVersion = request[0].toInt() and 0xFF
+            val command = request[1].toInt() and 0xFF
+            val addressType = request[3].toInt() and 0xFF
+            
+            if (reqVersion != 5) {
+                logger.warn(TAG, "SOCKS5: Invalid request version $reqVersion")
+                sendSocks5Error(output, 0x01) // General failure
+                clientSocket.close()
+                return
+            }
+            
+            if (command != 1) { // Only support CONNECT
+                logger.warn(TAG, "SOCKS5: Unsupported command $command")
+                sendSocks5Error(output, 0x07) // Command not supported
+                clientSocket.close()
+                return
+            }
+            
+            // Parse destination address
+            val (destHost, destPort) = when (addressType) {
+                0x01 -> { // IPv4
+                    val addr = ByteArray(4)
+                    if (input.read(addr) != 4) {
+                        logger.warn(TAG, "SOCKS5: Invalid IPv4 address")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val port = ByteArray(2)
+                    if (input.read(port) != 2) {
+                        logger.warn(TAG, "SOCKS5: Invalid port")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val host = addr.joinToString(".") { (it.toInt() and 0xFF).toString() }
+                    val portNum = ((port[0].toInt() and 0xFF) shl 8) or (port[1].toInt() and 0xFF)
+                    Pair(host, portNum)
+                }
+                0x03 -> { // Domain name
+                    val len = input.read()
+                    if (len < 0) {
+                        logger.warn(TAG, "SOCKS5: Invalid domain length")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val domain = ByteArray(len)
+                    if (input.read(domain) != len) {
+                        logger.warn(TAG, "SOCKS5: Invalid domain")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val port = ByteArray(2)
+                    if (input.read(port) != 2) {
+                        logger.warn(TAG, "SOCKS5: Invalid port")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val host = String(domain, Charsets.UTF_8)
+                    val portNum = ((port[0].toInt() and 0xFF) shl 8) or (port[1].toInt() and 0xFF)
+                    Pair(host, portNum)
+                }
+                0x04 -> { // IPv6
+                    val addr = ByteArray(16)
+                    if (input.read(addr) != 16) {
+                        logger.warn(TAG, "SOCKS5: Invalid IPv6 address")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    val port = ByteArray(2)
+                    if (input.read(port) != 2) {
+                        logger.warn(TAG, "SOCKS5: Invalid port")
+                        sendSocks5Error(output, 0x01)
+                        clientSocket.close()
+                        return
+                    }
+                    // Convert IPv6 bytes to string
+                    val host = addr.toList().chunked(2).joinToString(":") { chunk ->
+                        ((chunk[0].toInt() and 0xFF) shl 8 or (chunk[1].toInt() and 0xFF)).toString(16)
+                    }
+                    val portNum = ((port[0].toInt() and 0xFF) shl 8) or (port[1].toInt() and 0xFF)
+                    Pair(host, portNum)
+                }
+                else -> {
+                    logger.warn(TAG, "SOCKS5: Unsupported address type $addressType")
+                    sendSocks5Error(output, 0x08) // Address type not supported
+                    clientSocket.close()
+                    return
+                }
+            }
+            
+            logger.info(TAG, "SOCKS5: CONNECT request to $destHost:$destPort")
+            
+            // Create SSH tunnel to destination
+            try {
+                val remoteSocket = ssh.newDirectConnection(destHost, destPort)
+                logger.info(TAG, "SOCKS5: SSH tunnel established to $destHost:$destPort")
+                
+                // Send success response
+                // Format: VER(1) REP(1) RSV(1) ATYP(1) BND.ADDR(var) BND.PORT(2)
+                val response = byteArrayOf(
+                    0x05, // Version
+                    0x00, // Success
+                    0x00, // Reserved
+                    0x01, // IPv4 address type
+                    0x00, 0x00, 0x00, 0x00, // Bind address (0.0.0.0)
+                    0x00, 0x00 // Bind port (0)
+                )
+                output.write(response)
+                output.flush()
+                logger.verbose(TAG, "SOCKS5: Success response sent")
+                
+                // Start bidirectional relay
+                relayData(clientSocket, remoteSocket)
+                
+            } catch (e: Exception) {
+                logger.error(TAG, "SOCKS5: Failed to establish SSH tunnel to $destHost:$destPort", e)
+                sendSocks5Error(output, 0x05) // Connection refused
+                clientSocket.close()
+            }
+            
+        } catch (e: Exception) {
+            logger.error(TAG, "SOCKS5: Error handling client", e)
+        } finally {
+            try {
+                clientSocket.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+    
+    /**
+     * Sends a SOCKS5 error response.
+     */
+    private fun sendSocks5Error(output: java.io.OutputStream, errorCode: Int) {
+        try {
+            val response = byteArrayOf(
+                0x05, // Version
+                errorCode.toByte(), // Error code
+                0x00, // Reserved
+                0x01, // IPv4 address type
+                0x00, 0x00, 0x00, 0x00, // Bind address
+                0x00, 0x00 // Bind port
+            )
+            output.write(response)
+            output.flush()
+        } catch (e: Exception) {
+            logger.error(TAG, "Failed to send SOCKS5 error response", e)
+        }
+    }
+    
+    /**
+     * Relays data bidirectionally between client and remote sockets.
+     */
+    private fun relayData(clientSocket: java.net.Socket, remoteSocket: net.schmizz.sshj.connection.channel.direct.DirectConnection) {
+        val clientToRemote = Thread {
+            try {
+                val buffer = ByteArray(8192)
+                val input = clientSocket.getInputStream()
+                val output = remoteSocket.outputStream
+                var bytesRead: Int
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    output.write(buffer, 0, bytesRead)
+                    output.flush()
+                }
+            } catch (e: Exception) {
+                logger.verbose(TAG, "SOCKS5: Client to remote relay ended: ${e.message}")
+            } finally {
+                try {
+                    remoteSocket.close()
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+        }
+        
+        val remoteToClient = Thread {
+            try {
+                val buffer = ByteArray(8192)
+                val input = remoteSocket.inputStream
+                val output = clientSocket.getOutputStream()
+                var bytesRead: Int
+                while (input.read(buffer).also { bytesRead = it } != -1) {
+                    output.write(buffer, 0, bytesRead)
+                    output.flush()
+                }
+            } catch (e: Exception) {
+                logger.verbose(TAG, "SOCKS5: Remote to client relay ended: ${e.message}")
+            } finally {
+                try {
+                    clientSocket.close()
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+        }
+        
+        clientToRemote.start()
+        remoteToClient.start()
+        
+        // Wait for both threads to complete
+        try {
+            clientToRemote.join()
+            remoteToClient.join()
+        } catch (e: InterruptedException) {
+            logger.verbose(TAG, "SOCKS5: Relay interrupted")
+        }
+        
+        logger.verbose(TAG, "SOCKS5: Connection relay completed")
     }
     
     override suspend fun sendKeepAlive(session: SSHSession): Result<Unit> = withContext(Dispatchers.IO) {
@@ -247,6 +551,18 @@ class AndroidSSHClient(
     override suspend fun disconnect(session: SSHSession): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             logger.info(TAG, "Disconnecting SSH session ${session.sessionId}")
+            
+            // Close SOCKS5 server first
+            socks5Servers[session.sessionId]?.let { serverSocket ->
+                try {
+                    logger.verbose(TAG, "Closing SOCKS5 server on port ${serverSocket.localPort}")
+                    serverSocket.close()
+                    socks5Servers.remove(session.sessionId)
+                    logger.info(TAG, "SOCKS5 server closed")
+                } catch (e: Exception) {
+                    logger.error(TAG, "Error closing SOCKS5 server", e)
+                }
+            }
             
             val ssh = session.nativeSession as? SshjClient
                 ?: return@withContext Result.success(Unit).also {

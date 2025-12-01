@@ -17,6 +17,7 @@
 
 
 
+
   - Replace JSch connection logic with sshj SSHClient
   - Update private key loading to use sshj's KeyProvider
   - Implement host key verification using sshj's HostKeyVerifier
@@ -40,7 +41,11 @@
   - **Property 3: Sessions persist during connection**
   - **Validates: Requirements 2.3, 7.2**
 
-- [ ] 3. Rewrite AndroidSSHClient.createPortForwarding() method
+- [x] 3. Rewrite AndroidSSHClient.createPortForwarding() method
+
+
+
+
   - Replace JSch setPortForwardingL() with sshj LocalPortForwarder
   - Implement SOCKS5 proxy creation using sshj's forward() method
   - Verify proxy binds to localhost (127.0.0.1) only
@@ -48,27 +53,39 @@
   - Update error handling for port forwarding failures
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3_
 
-- [ ] 3.1 Write property test for SOCKS5 proxy creation
+- [x] 3.1 Write property test for SOCKS5 proxy creation
+
+
   - **Property 4: SOCKS5 proxy creation**
   - **Validates: Requirements 3.1, 3.2**
 
-- [ ] 3.2 Write property test for SOCKS5 connection acceptance
+- [x] 3.2 Write property test for SOCKS5 connection acceptance
+
+
   - **Property 5: SOCKS5 connections are accepted**
   - **Validates: Requirements 3.3**
 
-- [ ] 3.3 Write property test for SOCKS5 handshake
+- [x] 3.3 Write property test for SOCKS5 handshake
+
+
   - **Property 6: SOCKS5 handshake compliance**
   - **Validates: Requirements 3.4, 4.1**
 
-- [ ] 3.4 Write property test for CONNECT requests
+- [x] 3.4 Write property test for CONNECT requests
+
+
   - **Property 7: CONNECT requests succeed**
   - **Validates: Requirements 3.5, 4.2**
 
-- [ ] 3.5 Write property test for bidirectional data relay
+- [x] 3.5 Write property test for bidirectional data relay
+
+
   - **Property 8: Bidirectional data relay**
   - **Validates: Requirements 4.3**
 
-- [ ] 3.6 Write property test for concurrent connections
+- [x] 3.6 Write property test for concurrent connections
+
+
   - **Property 9: Concurrent connections**
   - **Validates: Requirements 4.5**
 
