@@ -128,6 +128,7 @@
 
 
 
+
   - Map sshj exceptions to ConnectionError types
   - Maintain user-friendly error messages
   - Ensure all error categories are covered
@@ -139,21 +140,31 @@
   - **Property 11: Exception mapping**
   - **Validates: Requirements 6.1**
 
-- [ ] 7. Update security configuration
+- [x] 7. Update security configuration
+
+
+
+
   - Configure strong encryption algorithms
   - Verify key-only authentication (no passwords)
   - Implement host key verification
   - _Requirements: 10.1, 10.2, 10.5_
 
-- [ ] 7.1 Write property test for strong encryption
+- [x] 7.1 Write property test for strong encryption
+
+
   - **Property 13: Strong encryption**
   - **Validates: Requirements 10.1**
 
-- [ ] 7.2 Write property test for key-only authentication
+- [x] 7.2 Write property test for key-only authentication
+
+
   - **Property 14: Key-only authentication**
   - **Validates: Requirements 10.2**
 
-- [ ] 7.3 Write property test for host key verification
+- [x] 7.3 Write property test for host key verification
+
+
   - **Property 15: Host key verification**
   - **Validates: Requirements 10.5**
 

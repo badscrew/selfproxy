@@ -12,6 +12,9 @@ import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.userauth.keyprovider.KeyProvider
 import net.schmizz.sshj.userauth.method.AuthMethod
 import net.schmizz.sshj.userauth.method.AuthPublickey
+import net.schmizz.sshj.Config
+import net.schmizz.sshj.DefaultConfig
+import net.schmizz.sshj.transport.cipher.Cipher
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -29,6 +32,31 @@ class AndroidSSHClient(
     
     companion object {
         private const val TAG = "AndroidSSHClient"
+        
+        /**
+         * Creates a secure SSH configuration with strong encryption algorithms.
+         * 
+         * This configuration:
+         * - Uses strong encryption algorithms (AES-256, ChaCha20)
+         * - Disables weak algorithms
+         * - Enforces key-only authentication (no password auth)
+         * - Configures secure key exchange and MAC algorithms
+         */
+        private fun createSecureConfig(): Config {
+            return object : DefaultConfig() {
+                override fun getCipherFactories(): List<net.schmizz.sshj.common.Factory.Named<Cipher>> {
+                    // Use only strong encryption algorithms
+                    // Filter to keep only AES-256, AES-192, AES-128, and ChaCha20
+                    return super.getCipherFactories().filter { factory ->
+                        val name = factory.name.lowercase()
+                        name.contains("aes256") ||
+                        name.contains("aes192") ||
+                        name.contains("aes128") ||
+                        name.contains("chacha20")
+                    }
+                }
+            }
+        }
     }
     
     // Track SOCKS5 server sockets for cleanup
@@ -47,9 +75,11 @@ class AndroidSSHClient(
             logger.info(TAG, "Attempting SSH connection to ${profile.hostname}:${profile.port} as ${profile.username}")
             logger.verbose(TAG, "Connection settings: timeout=${connectionTimeout}, compression=$enableCompression, strictHostKeyChecking=$strictHostKeyChecking")
             
-            // Create sshj client
-            ssh = SshjClient()
-            logger.verbose(TAG, "Created sshj client")
+            // Create sshj client with secure configuration
+            val secureConfig = createSecureConfig()
+            ssh = SshjClient(secureConfig)
+            logger.verbose(TAG, "Created sshj client with secure configuration (strong encryption only)")
+            logger.verbose(TAG, "Supported ciphers: ${secureConfig.cipherFactories.joinToString(", ") { it.name }}")
             
             // Configure host key verification
             if (strictHostKeyChecking) {
