@@ -1,6 +1,10 @@
 # Implementation Plan: JSch to sshj Migration
 
-- [ ] 1. Update project dependencies
+- [x] 1. Update project dependencies
+
+
+
+
   - Remove JSch dependency from `shared/build.gradle.kts`
   - Add sshj 0.38.0 dependency
   - Add BouncyCastle dependencies (bcprov-jdk18on, bcpkix-jdk18on)
