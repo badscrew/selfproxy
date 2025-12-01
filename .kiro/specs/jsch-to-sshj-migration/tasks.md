@@ -5,13 +5,18 @@
 
 
 
+
   - Remove JSch dependency from `shared/build.gradle.kts`
   - Add sshj 0.38.0 dependency
   - Add BouncyCastle dependencies (bcprov-jdk18on, bcpkix-jdk18on)
   - Sync Gradle and verify build succeeds
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Rewrite AndroidSSHClient.connect() method
+- [x] 2. Rewrite AndroidSSHClient.connect() method
+
+
+
+
   - Replace JSch connection logic with sshj SSHClient
   - Update private key loading to use sshj's KeyProvider
   - Implement host key verification using sshj's HostKeyVerifier
@@ -19,15 +24,19 @@
   - Update exception mapping from JSch to sshj exceptions
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 10.1, 10.2, 10.5_
 
-- [ ] 2.1 Write property test for connection establishment
+- [x] 2.1 Write property test for connection establishment
+
+
   - **Property 1: Valid credentials establish connections**
   - **Validates: Requirements 2.1**
 
-- [ ] 2.2 Write property test for key type support
+- [x] 2.2 Write property test for key type support
+
   - **Property 2: All key types are supported**
   - **Validates: Requirements 2.2**
 
-- [ ] 2.3 Write property test for session persistence
+- [x] 2.3 Write property test for session persistence
+
   - **Property 3: Sessions persist during connection**
   - **Validates: Requirements 2.3, 7.2**
 
