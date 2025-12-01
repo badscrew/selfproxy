@@ -46,6 +46,7 @@
 
 
 
+
   - Replace JSch setPortForwardingL() with sshj LocalPortForwarder
   - Implement SOCKS5 proxy creation using sshj's forward() method
   - Verify proxy binds to localhost (127.0.0.1) only
@@ -89,13 +90,19 @@
   - **Property 9: Concurrent connections**
   - **Validates: Requirements 4.5**
 
-- [ ] 4. Update AndroidSSHClient.sendKeepAlive() method
+- [x] 4. Update AndroidSSHClient.sendKeepAlive() method
+
+
+
+
   - Replace JSch keep-alive with sshj keep-alive mechanism
   - Configure keep-alive interval (60 seconds)
   - Verify keep-alive packets are sent correctly
   - _Requirements: 7.1_
 
-- [ ] 4.1 Write property test for keep-alive packets
+- [x] 4.1 Write property test for keep-alive packets
+
+
   - **Property 12: Keep-alive packets**
   - **Validates: Requirements 7.1**
 

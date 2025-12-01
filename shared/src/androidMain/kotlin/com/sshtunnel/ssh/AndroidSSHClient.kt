@@ -530,18 +530,27 @@ class AndroidSSHClient(
                 )
             }
             
-            // Send keep-alive packet
-            // Note: sshj's keep-alive is automatic, but we can trigger it manually
-            logger.verbose(TAG, "Sending SSH keep-alive packet")
-            // sshj doesn't have a direct sendAlive() method, but keep-alive is handled automatically
-            // We'll just verify the connection is still alive
-            if (!ssh.isConnected) {
+            // Verify keep-alive is configured
+            // sshj's keep-alive is automatic and configured during connection
+            // The keep-alive interval is set to 60 seconds in the connect() method
+            logger.verbose(TAG, "Verifying SSH keep-alive configuration")
+            
+            val keepAliveInterval = ssh.connection.keepAlive.keepAliveInterval
+            logger.verbose(TAG, "Keep-alive interval: $keepAliveInterval seconds")
+            
+            // Verify connection is still alive by checking transport
+            if (!ssh.isConnected || !ssh.isAuthenticated) {
+                logger.warn(TAG, "Connection is not alive")
                 throw IOException("Connection is not alive")
             }
-            logger.verbose(TAG, "Keep-alive check successful")
+            
+            logger.verbose(TAG, "Keep-alive check successful - connection is alive")
             
             Result.success(Unit)
             
+        } catch (e: IOException) {
+            logger.error(TAG, "Failed to verify keep-alive: ${e.message}", e)
+            Result.failure(SSHError.SessionClosed("Connection is not alive"))
         } catch (e: Exception) {
             logger.error(TAG, "Failed to send keep-alive", e)
             Result.failure(SSHError.Unknown("Failed to send keep-alive", e))

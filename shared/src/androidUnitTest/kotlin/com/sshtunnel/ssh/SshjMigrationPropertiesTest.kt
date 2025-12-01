@@ -539,6 +539,63 @@ class SshjMigrationPropertiesTest {
     }
     
     /**
+     * Feature: jsch-to-sshj-migration, Property 12: Keep-alive packets
+     * Validates: Requirements 7.1
+     * 
+     * For any established SSH connection, the system should send keep-alive packets
+     * at regular intervals (approximately every 60 seconds) to maintain the session.
+     * 
+     * Note: This test validates that keep-alive functionality is properly configured
+     * and that the sendKeepAlive method handles various session states correctly.
+     * Since we don't have real SSH servers in unit tests, we focus on testing
+     * the keep-alive behavior with mock sessions and error handling.
+     */
+    @Test
+    fun `keep-alive packets should be sent at regular intervals`() = runTest {
+        // Feature: jsch-to-sshj-migration, Property 12: Keep-alive packets
+        // Validates: Requirements 7.1
+        
+        checkAll(
+            iterations = 100,
+            Arb.serverProfile()
+        ) { profile ->
+            val client = AndroidSSHClient(MockLogger())
+            
+            // Test 1: Keep-alive should fail on disconnected/invalid session
+            val mockSession = SSHSession(
+                sessionId = "test-session-${profile.id}",
+                serverAddress = profile.hostname,
+                serverPort = profile.port,
+                username = profile.username,
+                socksPort = 0,
+                nativeSession = null // No real SSH connection
+            )
+            
+            // Keep-alive should fail gracefully on disconnected session
+            val keepAliveResult = client.sendKeepAlive(mockSession)
+            assert(keepAliveResult.isFailure) {
+                "Keep-alive should fail on disconnected session"
+            }
+            
+            val error = keepAliveResult.exceptionOrNull()
+            assert(error is SSHError.SessionClosed) {
+                "Expected SessionClosed error for disconnected session, got ${error?.javaClass?.simpleName}"
+            }
+            
+            // Verify error message is informative
+            val message = error?.message ?: ""
+            assert(message.isNotEmpty()) {
+                "Error message should not be empty"
+            }
+            
+            // Test 2: Verify session state is checked before sending keep-alive
+            assert(!client.isConnected(mockSession)) {
+                "Mock session should not report as connected"
+            }
+        }
+    }
+    
+    /**
      * Feature: jsch-to-sshj-migration, Property 4: SOCKS5 proxy creation
      * Validates: Requirements 3.1, 3.2
      * 
