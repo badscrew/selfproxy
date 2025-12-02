@@ -185,6 +185,7 @@
 
 
 
+
   - Use existing JSchSocksTestScreen to test SOCKS5 functionality
   - Verify Test 1: Connect to SOCKS5 port succeeds
   - Verify Test 2: SOCKS5 handshake succeeds
@@ -192,7 +193,11 @@
   - Verify Test 4: HTTP request through tunnel succeeds
   - _Requirements: 8.1, 8.3_
 
-- [ ] 10. Remove all JSch references
+- [x] 10. Remove all JSch references
+
+
+
+
   - Search codebase for remaining JSch imports
   - Remove any JSch-specific code or comments
   - Verify no JSch dependencies remain
