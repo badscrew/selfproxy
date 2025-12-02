@@ -204,7 +204,9 @@
   - Verify no JSch dependencies remain
   - _Requirements: 1.2, 1.4_
 
-- [-] 11. Update documentation and naming
+- [x] 11. Update documentation and naming
+
+
 
 
 
@@ -214,4 +216,8 @@
   - Update any relevant documentation files
   - _Requirements: 1.4_
 
-- [ ] 12. Final checkpoint - Ensure all tests pass, ask the user if questions arise
+- [x] 12. Final checkpoint - Ensure all tests pass, ask the user if questions arise
+
+
+
+
