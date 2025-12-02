@@ -152,7 +152,7 @@ class LoggingTest {
         testLogger.info(
             "TCPHandler",
             "TCP connection closed: ${key.sourceIp}:${key.sourcePort} -> ${key.destIp}:${key.destPort} " +
-            "(reason=FIN, duration=${String.format("%.2f", duration)}s, " +
+            "(reason=FIN, duration=${String.format(java.util.Locale.US, "%.2f", duration)}s, " +
             "sent=1024 bytes, received=2048 bytes)"
         )
         
