@@ -21,7 +21,7 @@ import java.net.Socket
  * This tests if a SOCKS5 proxy on a given port works correctly.
  */
 @Composable
-fun JSchSocksTestScreen(
+fun SocksTestScreen(
     socksPort: Int,
     onBack: () -> Unit
 ) {
@@ -178,7 +178,7 @@ private suspend fun testSocksProxy(socksPort: Int, log: (String) -> Unit) = with
                         if (firstLine != null) {
                             log("✅ Received HTTP response: $firstLine")
                             log("\n✅✅✅ ALL TESTS PASSED!")
-                            log("JSch SOCKS5 proxy is working correctly!")
+                            log("sshj SOCKS5 proxy is working correctly!")
                         } else {
                             log("❌ No HTTP response received")
                         }

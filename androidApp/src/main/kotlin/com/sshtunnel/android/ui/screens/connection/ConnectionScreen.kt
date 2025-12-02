@@ -382,7 +382,7 @@ private fun ConnectedContent(
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = 8.dp
                 ) {
-                    com.sshtunnel.android.testing.JSchSocksTestScreen(
+                    com.sshtunnel.android.testing.SocksTestScreen(
                         socksPort = connection.socksPort,
                         onBack = { showSocksTest = false }
                     )

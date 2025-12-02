@@ -49,7 +49,8 @@ ssh-tunnel-proxy/
 - **Serialization**: kotlinx-serialization
 
 ### Android-Specific
-- **SSH Library**: JSch
+- **SSH Library**: sshj 0.38.0
+- **Cryptography**: BouncyCastle (bcprov-jdk18on, bcpkix-jdk18on)
 - **VPN**: Android VpnService API
 - **Credential Storage**: Android Keystore
 - **DI**: Hilt for dependency injection
