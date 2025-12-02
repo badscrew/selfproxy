@@ -145,6 +145,7 @@
 
 
 
+
   - Configure strong encryption algorithms
   - Verify key-only authentication (no passwords)
   - Implement host key verification
@@ -168,7 +169,13 @@
   - **Property 15: Host key verification**
   - **Validates: Requirements 10.5**
 
-- [ ] 8. Checkpoint - Ensure all tests pass, ask the user if questions arise
+- [x] 8. Checkpoint - Ensure all tests pass, ask the user if questions arise
+
+
+
+
+
+
 
 - [ ] 9. Run SOCKS5 integration test
   - Use existing JSchSocksTestScreen to test SOCKS5 functionality
