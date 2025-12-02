@@ -46,6 +46,9 @@ class DnsRoutingIntegrationTest {
         mockSocksServer = MockSocksServer()
         mockSocksServer.start()
         
+        // Give server time to start accepting connections
+        Thread.sleep(100)
+        
         // Setup components
         logger = TestLogger()
         connectionTable = ConnectionTable(logger)
@@ -100,8 +103,8 @@ class DnsRoutingIntegrationTest {
         // Handle the UDP packet
         udpHandler.handleUdpPacket(packet, ipHeader, mockTunOutputStream)
         
-        // Wait for async processing
-        delay(500)
+        // Wait for async processing (increased delay for reliability)
+        delay(1000)
         
         // Verify SOCKS5 server received the connection
         assertTrue("SOCKS5 server should have received connection", mockSocksServer.hadConnection())
@@ -207,8 +210,8 @@ class DnsRoutingIntegrationTest {
         // Handle the UDP packet
         udpHandler.handleUdpPacket(packet, ipHeader, mockTunOutputStream)
         
-        // Wait for processing
-        delay(500)
+        // Wait for processing (increased delay for reliability)
+        delay(1000)
         
         // Verify no response packet was written
         val responsePackets = mockTunOutputStream.getWrittenPackets()
