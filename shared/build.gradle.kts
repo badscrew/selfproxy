@@ -71,9 +71,10 @@ kotlin {
                 // sshj for SSH (replaces JSch)
                 implementation("com.hierynomus:sshj:0.38.0")
                 
-                // BouncyCastle for SSH key support
-                implementation("org.bouncycastle:bcprov-jdk18on:1.77")
-                implementation("org.bouncycastle:bcpkix-jdk18on:1.77")
+                // SpongyCastle - Android-compatible BouncyCastle with full algorithm support
+                implementation("com.madgag.spongycastle:core:1.54.0.0")
+                implementation("com.madgag.spongycastle:prov:1.54.0.0")
+                implementation("com.madgag.spongycastle:pkix:1.54.0.0")
                 
                 // Android Security
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")

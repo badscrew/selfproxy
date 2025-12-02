@@ -15,7 +15,9 @@ import net.schmizz.sshj.userauth.method.AuthPublickey
 import net.schmizz.sshj.Config
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.transport.cipher.Cipher
+import org.spongycastle.jce.provider.BouncyCastleProvider
 import java.io.IOException
+import java.security.Security
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -33,29 +35,37 @@ class AndroidSSHClient(
     companion object {
         private const val TAG = "AndroidSSHClient"
         
+        // Flag to ensure SpongyCastle is only registered once
+        private var spongyCastleRegistered = false
+        
         /**
-         * Creates a secure SSH configuration with strong encryption algorithms.
-         * 
-         * This configuration:
-         * - Uses strong encryption algorithms (AES-256, ChaCha20)
-         * - Disables weak algorithms
-         * - Enforces key-only authentication (no password auth)
-         * - Configures secure key exchange and MAC algorithms
+         * Registers SpongyCastle as the security provider.
+         * SpongyCastle is a repackaged BouncyCastle for Android with full algorithm support.
          */
-        private fun createSecureConfig(): Config {
-            return object : DefaultConfig() {
-                override fun getCipherFactories(): List<net.schmizz.sshj.common.Factory.Named<Cipher>> {
-                    // Use only strong encryption algorithms
-                    // Filter to keep only AES-256, AES-192, AES-128, and ChaCha20
-                    return super.getCipherFactories().filter { factory ->
-                        val name = factory.name.lowercase()
-                        name.contains("aes256") ||
-                        name.contains("aes192") ||
-                        name.contains("aes128") ||
-                        name.contains("chacha20")
-                    }
+        private fun ensureSpongyCastleRegistered() {
+            synchronized(this) {
+                if (!spongyCastleRegistered) {
+                    // Remove any existing BouncyCastle provider
+                    Security.removeProvider("BC")
+                    
+                    // Add SpongyCastle as the primary security provider
+                    Security.insertProviderAt(BouncyCastleProvider(), 1)
+                    
+                    spongyCastleRegistered = true
                 }
             }
+        }
+        
+        /**
+         * Creates an Android-compatible SSH configuration using SpongyCastle.
+         * SpongyCastle provides full BouncyCastle functionality on Android.
+         */
+        private fun createSecureConfig(): Config {
+            // Ensure SpongyCastle is registered
+            ensureSpongyCastleRegistered()
+            
+            // Use DefaultConfig which now has access to all algorithms via SpongyCastle
+            return DefaultConfig()
         }
     }
     

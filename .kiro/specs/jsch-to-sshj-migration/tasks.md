@@ -177,7 +177,14 @@
 
 
 
-- [ ] 9. Run SOCKS5 integration test
+
+- [x] 9. Run SOCKS5 integration test
+
+
+
+
+
+
   - Use existing JSchSocksTestScreen to test SOCKS5 functionality
   - Verify Test 1: Connect to SOCKS5 port succeeds
   - Verify Test 2: SOCKS5 handshake succeeds
