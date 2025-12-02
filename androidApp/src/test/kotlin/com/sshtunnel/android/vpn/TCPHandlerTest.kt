@@ -1241,15 +1241,8 @@ class TCPHandlerTest {
             val tcpHeader = testHandler.parseTcpHeader(finPacket, 20)
             assertNotNull("TCP header should be parsed", tcpHeader)
             
-            // Handle FIN packet (using reflection to access private method)
-            val handleFinMethod = TCPHandler::class.java.getDeclaredMethod(
-                "handleFin",
-                ConnectionKey::class.java,
-                TcpHeader::class.java,
-                FileOutputStream::class.java
-            )
-            handleFinMethod.isAccessible = true
-            handleFinMethod.invoke(testHandler, key, tcpHeader, tunFileOutput)
+            // Handle FIN packet (now internal, can call directly)
+            testHandler.handleFin(key, tcpHeader!!, tunFileOutput)
             
             // Wait a bit for async operations
             kotlinx.coroutines.delay(100)
@@ -1344,14 +1337,8 @@ class TCPHandlerTest {
             val tcpHeader = testHandler.parseTcpHeader(rstPacket, 20)
             assertNotNull("TCP header should be parsed", tcpHeader)
             
-            // Handle RST packet (using reflection to access private method)
-            val handleRstMethod = TCPHandler::class.java.getDeclaredMethod(
-                "handleRst",
-                ConnectionKey::class.java,
-                FileOutputStream::class.java
-            )
-            handleRstMethod.isAccessible = true
-            handleRstMethod.invoke(testHandler, key, tunFileOutput)
+            // Handle RST packet (now internal, can call directly)
+            testHandler.handleRst(key, tunFileOutput)
             
             // Wait a bit for async operations
             kotlinx.coroutines.delay(100)
@@ -1443,15 +1430,8 @@ class TCPHandlerTest {
             val tcpHeader = testHandler.parseTcpHeader(finPacket, 20)
             assertNotNull("TCP header should be parsed", tcpHeader)
             
-            // Handle FIN packet
-            val handleFinMethod = TCPHandler::class.java.getDeclaredMethod(
-                "handleFin",
-                ConnectionKey::class.java,
-                TcpHeader::class.java,
-                FileOutputStream::class.java
-            )
-            handleFinMethod.isAccessible = true
-            handleFinMethod.invoke(testHandler, key, tcpHeader, tunFileOutput)
+            // Handle FIN packet (now internal, can call directly)
+            testHandler.handleFin(key, tcpHeader!!, tunFileOutput)
             
             // Wait for cleanup
             kotlinx.coroutines.delay(100)
@@ -1528,14 +1508,8 @@ class TCPHandlerTest {
             // Create mock TUN output stream
             val tunFileOutput = java.io.FileOutputStream(java.io.FileDescriptor())
             
-            // Handle RST packet
-            val handleRstMethod = TCPHandler::class.java.getDeclaredMethod(
-                "handleRst",
-                ConnectionKey::class.java,
-                FileOutputStream::class.java
-            )
-            handleRstMethod.isAccessible = true
-            handleRstMethod.invoke(testHandler, key, tunFileOutput)
+            // Handle RST packet (now internal, can call directly)
+            testHandler.handleRst(key, tunFileOutput)
             
             // Wait for cleanup
             kotlinx.coroutines.delay(100)

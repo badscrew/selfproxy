@@ -619,7 +619,7 @@ class TCPHandler(
      * @param tcpHeader The parsed TCP header from the FIN packet
      * @param tunOutputStream Output stream to write response packets
      */
-    private suspend fun handleFin(
+    internal suspend fun handleFin(
         key: ConnectionKey,
         tcpHeader: TcpHeader,
         tunOutputStream: FileOutputStream
@@ -775,7 +775,7 @@ class TCPHandler(
      * @param key The connection key (5-tuple)
      * @param tunOutputStream Output stream (not used for RST, but kept for consistency)
      */
-    private suspend fun handleRst(
+    internal suspend fun handleRst(
         key: ConnectionKey,
         tunOutputStream: FileOutputStream
     ) {
