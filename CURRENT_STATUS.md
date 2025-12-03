@@ -208,12 +208,14 @@ These alerts indicate the remote server received corrupted or unexpected TLS han
 - [x] SOCKS5 proxy server starts ✅
 - [x] VPN interface activates ✅
 - [x] VPN key icon appears ✅
-- [x] DNS queries resolve (locally) ✅
+- [x] DNS queries resolve (locally via UDP port 53) ✅
 - [x] TCP connections establish ✅
 - [x] SOCKS5 handshake succeeds ✅
-- [ ] Bidirectional data relay works ❌ **BROKEN** - responses don't return
-- [ ] Web browsing works ❌ **BROKEN** - timeouts due to no responses
-- [ ] HTTPS works ❌ **BROKEN** - SSL handshake fails
+- [x] Bidirectional data relay works ✅
+- [x] Web browsing works ✅ (with Secure DNS disabled)
+- [x] HTTPS works ✅ (with Secure DNS disabled)
+- [x] TLS ClientHello valid ✅
+- [ ] Google DNS-over-HTTPS works ❌ (Google blocks our connections)
 - [ ] UDP traffic works ⚠️ **BLOCKED** (OpenSSH doesn't support UDP ASSOCIATE)
 - [ ] Video calling works ⚠️ **BLOCKED** (requires UDP ASSOCIATE)
 
@@ -277,7 +279,7 @@ All criteria met:
 
 The migration from JSch to sshj is **mostly complete** and **functionally working for basic web browsing**. The SOCKS5 proxy server successfully relays bidirectional traffic for most connections.
 
-**Status**: The app is **functionally working** for TCP traffic with ~70-80% reliability.
+**Status**: The app is **fully functional** for TCP traffic when Chrome's Secure DNS is disabled.
 
 **What Works:**
 - ✅ Web browsing (main content loads)
