@@ -101,18 +101,20 @@ Integration tests passing:
 
 ## What's Still Failing ❌
 
-1. **Some TLS Connections**: Intermittent TLS handshake failures ❌
-   - **Symptom**: Some connections receive only 7 bytes (TLS alert messages)
+1. **Google DNS Servers (8.8.8.8, 8.8.4.4)**: 100% failure rate ❌
+   - **Symptom**: ALL connections to Google DNS fail with TLS alerts
    - **TLS Alerts Seen**: 
      - `15 03 01 00 02 02 46` = certificate_unknown
      - `15 03 01 00 02 02 32` = decode_error
-   - **Impact**: Some images and resources don't load
-   - **Likely Cause**: Timing issues or connection reuse problems
+     - `15 03 03 00 02 02 16` = close_notify
+   - **Impact**: Chrome's DNS-over-HTTPS/TLS feature causes page hangs
+   - **Root Cause**: Google servers reject our TLS handshakes (likely IP blocking or SNI mismatch)
+   - **Workaround**: Disable Chrome's "Secure DNS" feature
    
-2. **Connection Reliability**: Not 100% reliable ❌
-   - Most connections work (70-80% success rate estimated)
-   - Some connections fail with TLS alerts
-   - Affects secondary resources more than main content
+2. **Page Hangs**: Chrome waits for failed DNS-over-HTTPS requests ❌
+   - Chrome retries multiple times before timing out
+   - Main content loads but page appears frozen
+   - User experience is poor with Secure DNS enabled
 
 ---
 
@@ -289,11 +291,14 @@ The migration from JSch to sshj is **mostly complete** and **functionally workin
 - ⚠️ Connection reliability could be better
 
 **Recommendation**: 
-1. **Current state is usable** for basic web browsing
-2. **Further optimization needed** for production quality
-3. **Investigate remaining TLS failures** - may be timing or buffering issues
-4. **Consider connection pooling** or keep-alive improvements
+1. **Disable Chrome's Secure DNS** for best experience
+   - Settings → Privacy and Security → Security → Use secure DNS → OFF
+2. **Current state is usable** for basic web browsing (with Secure DNS disabled)
+3. **Google DNS blocking** - investigate why 8.8.8.8/8.8.4.4 reject our TLS handshakes
+4. **Consider DNS routing** - implement proper DNS-over-tunnel solution
 5. **UDP support still blocked** - requires non-OpenSSH SOCKS5 server
+
+**For Testing**: Disable Chrome's Secure DNS feature to avoid page hangs
 
 ---
 
