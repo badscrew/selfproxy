@@ -336,11 +336,12 @@ The issue **IS**:
 1. Configure SSH server timeouts:
    ```bash
    # /etc/ssh/sshd_config
-   ChannelTimeout session:*=0  # Disable timeout
-   MaxSessions 100             # Allow more channels
-   ClientAliveInterval 60
-   ClientAliveCountMax 10
+   ChannelTimeout direct-tcpip:*=600  # 10 minutes for tunnels
+   MaxSessions 100                     # Allow 100 concurrent channels
+   ClientAliveInterval 60              # Keepalive every 60 seconds
+   ClientAliveCountMax 10              # Allow 10 missed keepalives
    ```
+   Then reload: `sudo systemctl reload sshd`
 
 **Client-Side (Workaround):**
 1. Implement automatic retry logic
