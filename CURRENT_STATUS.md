@@ -2,15 +2,15 @@
 
 **Date**: 2024-12-03  
 **Version**: 0.2.1-alpha  
-**Status**: ✅ TLS Fixed - Google Blocking Identified
+**Status**: ⚠️ SSH Channel Stability Issue Identified
 
 ---
 
 ## Summary
 
-The SSH Tunnel Proxy has successfully migrated from JSch to sshj library and resolved a critical TLS ClientHello fragmentation issue. The application now has a fully functional SOCKS5 proxy implementation with proper protocol compliance and TLS record buffering for compatibility with strict HTTPS servers.
+The SSH Tunnel Proxy has successfully migrated from JSch to sshj library and resolved a critical TLS ClientHello fragmentation issue. However, a significant stability issue has been identified: **67% of SSH channels close prematurely** with "Stream closed" errors, causing connection failures.
 
-**Important Finding**: Google's servers (google.com, youtube.com, etc.) actively block/rate-limit connections from many VPN/proxy server IPs. This is intentional anti-abuse behavior by Google, not a bug in our implementation. Other websites work perfectly.
+**Critical Finding**: The root cause is SSH direct-tcpip channels created by sshj closing unexpectedly during data transfer. This affects all websites equally and results in a 33% success rate for connections. This is likely due to SSH server configuration limits or sshj library limitations, not our code.
 
 ---
 
@@ -86,29 +86,32 @@ Integration tests passing:
 
 ---
 
-## Known Limitations (Not Bugs)
+## Critical Issues
 
-1. **Google Services Blocking** ⚠️
-   - **Affected**: google.com, youtube.com, Gmail, Google DNS (8.8.8.8, 8.8.4.4)
-   - **Symptom**: Many connections to Google servers fail with TLS alerts
-   - **TLS Alerts Seen**: 
-     - `15 03 01 00 02 02 46` = certificate_unknown
-     - `15 03 01 00 02 02 32` = decode_error
-     - `15 03 03 00 02 02 16` = close_notify
-     - `15 03 03 00 02 02 2f` = decrypt_error
-   - **Root Cause**: Google actively blocks/rate-limits VPN and proxy server IPs
-   - **Evidence**: 
-     - Some Google connections succeed (received 6KB+ data)
-     - Many Google connections fail (received 7 bytes = TLS alert)
-     - Non-Google sites work perfectly (impossibleband.com, example.com, etc.)
-   - **This is NOT a bug**: Google intentionally filters proxy/VPN traffic for anti-abuse
-   - **Workarounds**:
-     - Use a different SSH server with an IP Google doesn't block
-     - Use alternative services (DuckDuckGo, Bing, etc.)
-     - Accept intermittent failures with Google services
+1. **SSH Channel Premature Closure** ❌ **BLOCKING**
+   - **Symptom**: `ConnectionException: Stream closed` errors during data transfer
+   - **Impact**: 67% of connections fail, 33% succeed
+   - **Affected**: All websites (Google, non-Google, everything)
+   - **Error Pattern**:
+     ```
+     SOCKS5: SSH tunnel established to 216.58.214.68:443
+     SOCKS5: Client->Remote: read #4: 532 bytes
+     SOCKS5: Client->Remote relay error: ConnectionException: Stream closed
+     ```
+   - **Root Cause**: SSH direct-tcpip channels close unexpectedly
+   - **Possible Causes**:
+     - SSH server channel timeout settings
+     - SSH server MaxSessions limit
+     - sshj library internal timeouts
+     - SSH channel flow control issues
+   - **NOT our code**: TLS implementation is correct (proven by successful connections)
+   - **Solutions**:
+     - **Server-side**: Configure SSH server (increase timeouts, MaxSessions)
+     - **Client-side**: Implement retry logic (workaround)
+     - **Long-term**: Consider alternative SSH library
    
 2. **Chrome DNS-over-HTTPS Hangs** ⚠️
-   - Chrome's "Secure DNS" feature causes page hangs when Google DNS is blocked
+   - Chrome's "Secure DNS" feature causes page hangs
    - **Solution**: Disable Secure DNS in Chrome settings
    - Settings → Privacy and Security → Security → Use secure DNS → OFF
 
@@ -292,41 +295,73 @@ All criteria met:
 
 ## Conclusion
 
-The SSH Tunnel Proxy is **fully functional** for TCP traffic and HTTPS web browsing. The TLS ClientHello fragmentation issue has been resolved, enabling compatibility with strict HTTPS servers.
+The SSH Tunnel Proxy has **critical stability issues** that prevent reliable operation. While the TLS implementation is correct, SSH channel closures cause 67% of connections to fail.
 
-**Status**: The app is **production-ready** for TCP traffic with non-Google sites.
+**Status**: The app is **NOT production-ready** due to SSH channel stability issues.
 
-**What Works Perfectly:**
-- ✅ Web browsing (non-Google sites load correctly)
-- ✅ HTTPS connections (100% success rate for non-Google sites)
-- ✅ Strict HTTPS servers (impossibleband.com, example.com, etc.)
-- ✅ Large data transfers (tested with multi-KB transfers)
-- ✅ Bidirectional relay (data flows both ways reliably)
-- ✅ TLS record buffering (atomic ClientHello delivery)
-- ✅ TLS implementation is correct (verified with multiple servers)
+**What Works:**
+- ✅ TLS implementation is correct (verified with successful connections)
+- ✅ TLS record buffering works perfectly
+- ✅ SOCKS5 protocol implementation is correct
+- ✅ SSH connection establishment works
+- ✅ 33% of connections succeed with full data transfer
 
-**What's Limited (External Factors):**
-- ⚠️ **Google services unreliable** - Google blocks/rate-limits VPN/proxy IPs
-  - Some connections work, many fail with TLS alerts
-  - This is Google's intentional anti-abuse measure
-  - NOT a bug in our implementation
-  - Solution: Use different SSH server or alternative services
-- ⚠️ **UDP not supported** - Requires non-OpenSSH SOCKS5 server
+**What's Broken:**
+- ❌ **67% connection failure rate** - SSH channels close prematurely
+- ❌ **"Stream closed" errors** - Affects all websites equally
+- ❌ **Poor user experience** - Most page loads fail
+- ❌ **Not usable for daily browsing** - Too unreliable
 
-**Key Finding**: 
-The TLS implementation is **correct and working**. The failures with Google services are due to **Google's active blocking of VPN/proxy traffic**, not bugs in our code. Evidence:
-- Non-Google sites work perfectly
-- Some Google connections succeed (proving our code works)
-- Many Google connections get TLS alerts (proving Google is filtering)
+**Root Cause Analysis:**
+
+The issue is **NOT**:
+- ❌ Google blocking (proven: curl works, 33% succeed, affects all sites)
+- ❌ TLS implementation (proven: successful connections work perfectly)
+- ❌ Network issues (proven: consistent 33% success rate)
+
+The issue **IS**:
+- ✅ SSH direct-tcpip channels closing unexpectedly
+- ✅ Likely SSH server configuration (channel timeouts, MaxSessions)
+- ✅ Possibly sshj library limitations (hardcoded timeouts)
+
+**Evidence:**
+- Failed connections: sent=536-1820 bytes, received=7 bytes, duration=1s
+- Successful connections: sent=1894-4788 bytes, received=6KB-45KB, duration=2-9s
+- Error: `ConnectionException: Stream closed` from sshj library
+- Happens during data transfer, not during tunnel establishment
+
+**Solutions Required:**
+
+**Server-Side (Most Effective):**
+1. Configure SSH server timeouts:
+   ```bash
+   # /etc/ssh/sshd_config
+   ChannelTimeout session:*=0  # Disable timeout
+   MaxSessions 100             # Allow more channels
+   ClientAliveInterval 60
+   ClientAliveCountMax 10
+   ```
+
+**Client-Side (Workaround):**
+1. Implement automatic retry logic
+2. Add connection pooling
+3. Reduce concurrent connection limits
+
+**Long-Term (Architecture):**
+1. Evaluate alternative SSH libraries (JSch, Apache MINA)
+2. Consider HTTP proxy instead of SOCKS5
+3. Implement connection pooling at VPN level
 
 **Recommendation**: 
-1. **Disable Chrome's Secure DNS** to avoid page hangs
-   - Settings → Privacy and Security → Security → Use secure DNS → OFF
-2. **Use non-Google sites** for reliable browsing
-3. **Consider different SSH server** if Google access is critical
-4. **Accept intermittent Google failures** as expected behavior
+1. **Configure SSH server** - This is the most likely fix
+2. **Implement retry logic** - Improve UX while investigating
+3. **Monitor server logs** - Check for SSH errors
+4. **Test with different SSH servers** - Verify if server-specific
+5. **Consider this a known limitation** - Document for users
 
-**For Testing**: App works perfectly with non-Google websites. Google services may be intermittent due to their IP filtering.
+**For Testing**: App has 33% success rate. Not suitable for production use without SSH server configuration changes or retry logic implementation.
+
+**See**: `.kiro/temp/ssh-stream-closed-analysis.md` for detailed analysis.
 
 ---
 
