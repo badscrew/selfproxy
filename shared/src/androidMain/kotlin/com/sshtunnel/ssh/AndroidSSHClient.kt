@@ -122,6 +122,11 @@ class AndroidSSHClient(
             ssh.connect(profile.hostname, profile.port)
             logger.info(TAG, "SSH connection established successfully")
             
+            // Configure socket timeout after connection is established
+            // Set to 0 (infinite) to prevent premature closures of SSH channels
+            ssh.connection.timeoutMs = 0
+            logger.verbose(TAG, "Socket timeout set to infinite (0) for established connections")
+            
             // Load private key
             logger.verbose(TAG, "Loading private key (type: ${privateKey.keyType})")
             logger.verbose(TAG, "Private key size: ${privateKey.keyData.size} bytes")
