@@ -448,9 +448,31 @@ class TCPHandler(
             
             // Check if connection already exists
             val existing = connectionTable.getTcpConnection(key)
-            if (existing != null && existing.state != TcpState.CLOSED) {
-                logger.verbose(TAG, "Connection already exists for $key in state ${existing.state}, ignoring SYN")
-                return
+            if (existing != null) {
+                // Allow new SYN to replace connections in closing states (TIME_WAIT assassination)
+                // This is valid TCP behavior for connection reuse
+                val canReuse = existing.state == TcpState.CLOSED || 
+                              existing.state == TcpState.FIN_WAIT_1 ||
+                              existing.state == TcpState.FIN_WAIT_2 ||
+                              existing.state == TcpState.TIME_WAIT ||
+                              existing.state == TcpState.CLOSING
+                
+                if (!canReuse) {
+                    logger.verbose(TAG, "Connection already exists for $key in state ${existing.state}, ignoring SYN")
+                    return
+                }
+                
+                if (existing.state != TcpState.CLOSED) {
+                    logger.info(TAG, "Reusing connection $key (was in ${existing.state} state)")
+                    // Clean up old connection
+                    try {
+                        existing.readerJob.cancel()
+                        existing.socksSocket.close()
+                    } catch (e: Exception) {
+                        logger.verbose(TAG, "Error cleaning up old connection: ${e.message}")
+                    }
+                    connectionTable.removeTcpConnection(key)
+                }
             }
             
             // Initialize sequence numbers

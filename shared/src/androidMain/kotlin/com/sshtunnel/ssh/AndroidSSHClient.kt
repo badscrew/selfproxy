@@ -531,14 +531,27 @@ class AndroidSSHClient(
                 val input = clientSocket.getInputStream()
                 val output = remoteSocket.outputStream
                 var bytesRead: Int
+                var readCount = 0
                 while (input.read(buffer).also { bytesRead = it } != -1) {
-                    logger.verbose(TAG, "SOCKS5: Client->Remote: read $bytesRead bytes")
+                    readCount++
+                    logger.verbose(TAG, "SOCKS5: Client->Remote: read #$readCount: $bytesRead bytes")
+                    
+                    // Log first packet for TLS debugging (TLS ClientHello detection)
+                    if (readCount == 1 && bytesRead > 5) {
+                        val firstBytes = buffer.take(Math.min(10, bytesRead)).joinToString(" ") { "%02x".format(it) }
+                        logger.verbose(TAG, "SOCKS5: Client->Remote: first packet hex: $firstBytes")
+                        // Check if it's TLS ClientHello (0x16 0x03 0x01/0x03)
+                        if (buffer[0] == 0x16.toByte() && buffer[1] == 0x03.toByte()) {
+                            logger.info(TAG, "SOCKS5: Client->Remote: TLS ClientHello detected")
+                        }
+                    }
+                    
                     output.write(buffer, 0, bytesRead)
                     output.flush()
                     clientToRemoteBytes += bytesRead
                     logger.verbose(TAG, "SOCKS5: Client->Remote: wrote $bytesRead bytes (total: $clientToRemoteBytes)")
                 }
-                logger.info(TAG, "SOCKS5: Client->Remote relay ended normally (EOF), total: $clientToRemoteBytes bytes")
+                logger.info(TAG, "SOCKS5: Client->Remote relay ended normally (EOF after $readCount reads), total: $clientToRemoteBytes bytes")
             } catch (e: java.net.SocketException) {
                 // Socket closed by other thread - this is normal during shutdown
                 logger.verbose(TAG, "SOCKS5: Client->Remote relay ended (socket closed), total: $clientToRemoteBytes bytes")
