@@ -4,13 +4,28 @@
 
 This design document specifies the implementation of SOCKS5 UDP ASSOCIATE functionality to enable UDP-based applications (video calling, voice chat, gaming) to work through the SSH Tunnel Proxy VPN. The implementation extends the existing UDPHandler to support full UDP traffic routing, not just DNS queries.
 
+**CRITICAL FINDING**: Testing has revealed that **OpenSSH's SOCKS5 implementation does NOT support UDP ASSOCIATE** (command 0x03). The server returns error 0x07 (Command not supported). This is a fundamental limitation of OpenSSH's dynamic forwarding feature.
+
+### Server Compatibility Matrix
+
+| Server Type | UDP ASSOCIATE Support | Notes |
+|-------------|----------------------|-------|
+| OpenSSH (`ssh -D`) | ❌ No | Returns error 0x07, only supports TCP |
+| Dante SOCKS5 | ✅ Yes | Full RFC 1928 compliance |
+| Shadowsocks | ✅ Yes | UDP relay supported |
+| 3proxy | ✅ Yes | UDP ASSOCIATE supported |
+| Microsocks | ❌ No | Lightweight, TCP only |
+| SOCKS5 (Go) | ✅ Yes | Depends on implementation |
+
 ### Key Design Decisions
 
-1. **Separate UDP Relay Sockets**: Each UDP ASSOCIATE connection uses a dedicated DatagramSocket for the relay
-2. **Asynchronous Processing**: UDP reader coroutines handle responses without blocking the main packet router
-3. **Connection Pooling**: Reuse existing UDP ASSOCIATE connections for the same destination to minimize overhead
-4. **SOCKS5 UDP Header Encapsulation**: All UDP datagrams are wrapped with SOCKS5 headers before transmission
-5. **Graceful Degradation**: If UDP ASSOCIATE fails, log the error but continue processing other traffic
+1. **Server Capability Detection**: Detect UDP support on first attempt and cache the result
+2. **Graceful Degradation**: If UDP ASSOCIATE fails with 0x07, mark server as TCP-only and continue
+3. **User Notification**: Inform users when their server doesn't support UDP with actionable guidance
+4. **Separate UDP Relay Sockets**: Each UDP ASSOCIATE connection uses a dedicated DatagramSocket for the relay
+5. **Asynchronous Processing**: UDP reader coroutines handle responses without blocking the main packet router
+6. **Connection Pooling**: Reuse existing UDP ASSOCIATE connections for the same destination to minimize overhead
+7. **SOCKS5 UDP Header Encapsulation**: All UDP datagrams are wrapped with SOCKS5 headers before transmission
 
 ## Architecture
 
@@ -100,6 +115,39 @@ This design document specifies the implementation of SOCKS5 UDP ASSOCIATE functi
                                           ▼
                                   Internet/Destination
 ```
+
+## Current Implementation Status
+
+### What's Already Implemented ✅
+
+The client-side SOCKS5 UDP ASSOCIATE implementation is **complete and correct**:
+
+1. ✅ UDP ASSOCIATE handshake (command 0x03) - properly formatted
+2. ✅ SOCKS5 UDP header encapsulation - RFC 1928 compliant
+3. ✅ UDP relay socket creation and management
+4. ✅ Error detection and handling (including 0x07 detection)
+5. ✅ Graceful fallback when UDP not supported
+6. ✅ Logging and diagnostics
+
+### What's Missing ❌
+
+**CRITICAL**: TCP data relay is broken - must be fixed before UDP work:
+
+1. ❌ **Bidirectional TCP relay not working** - responses don't return from remote server
+2. ❌ OpenSSH doesn't implement UDP ASSOCIATE command (server limitation)
+3. ❌ No user notification about UDP limitations
+4. ❌ No UI indication of TCP-only vs TCP+UDP mode
+5. ❌ No documentation about compatible SOCKS5 servers
+
+**BLOCKER**: UDP ASSOCIATE implementation is blocked until TCP relay is fixed.
+
+### Recommended Next Steps
+
+1. **Add Server Capability Detection**: Cache the UDP support status after first attempt
+2. **Add User Notification**: Show persistent notification when UDP not supported
+3. **Add UI Indicators**: Display "TCP Only" or "TCP + UDP" badge in connection status
+4. **Add Documentation**: Create guide for setting up UDP-capable SOCKS5 servers
+5. **Consider Alternative Approaches**: Evaluate tun2socks or VPN-over-SSH solutions
 
 ## Components and Interfaces
 
@@ -559,10 +607,22 @@ suspend fun updateUdpAssociateStats(
 
 ### SOCKS5 Server Compatibility
 
-- **OpenSSH**: Supports UDP ASSOCIATE via `ssh -D` (dynamic forwarding)
-- **Dante**: Full SOCKS5 server with UDP support
-- **Shadowsocks**: Supports UDP relay
-- **Most SOCKS5 proxies**: May not support UDP ASSOCIATE (command 0x03)
+**IMPORTANT**: Testing has confirmed that **OpenSSH does NOT support UDP ASSOCIATE**. The logs show:
+```
+W AndroidSSHClient: SOCKS5: Unsupported command 3
+E UDPHandler: SOCKS5 UDP ASSOCIATE failed: Command not supported (code: 0x7)
+```
+
+**Compatible Servers** (UDP ASSOCIATE supported):
+- **Dante**: Full SOCKS5 server with UDP support (recommended)
+- **Shadowsocks**: Supports UDP relay (popular choice)
+- **3proxy**: Lightweight with UDP support
+- **Custom implementations**: Some Go/Python SOCKS5 servers
+
+**Incompatible Servers** (UDP ASSOCIATE NOT supported):
+- **OpenSSH** (`ssh -D`): Only supports TCP CONNECT (command 0x01)
+- **Microsocks**: Lightweight, TCP only
+- **Many simple SOCKS5 proxies**: Only implement TCP subset
 
 ### Known Limitations
 

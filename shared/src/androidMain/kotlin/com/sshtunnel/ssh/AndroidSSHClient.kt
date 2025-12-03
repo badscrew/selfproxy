@@ -437,8 +437,19 @@ class AndroidSSHClient(
             
             // Create SSH tunnel to destination
             try {
+                logger.verbose(TAG, "SOCKS5: Creating SSH direct connection to $destHost:$destPort")
                 val remoteSocket = ssh.newDirectConnection(destHost, destPort)
                 logger.info(TAG, "SOCKS5: SSH tunnel established to $destHost:$destPort")
+                
+                // Verify the connection is actually open
+                if (remoteSocket.inputStream == null || remoteSocket.outputStream == null) {
+                    logger.error(TAG, "SOCKS5: SSH tunnel has null streams!")
+                    sendSocks5Error(output, 0x05)
+                    clientSocket.close()
+                    return
+                }
+                
+                logger.verbose(TAG, "SOCKS5: SSH tunnel streams verified")
                 
                 // Send success response
                 // Format: VER(1) REP(1) RSV(1) ATYP(1) BND.ADDR(var) BND.PORT(2)
@@ -452,15 +463,25 @@ class AndroidSSHClient(
                 )
                 output.write(response)
                 output.flush()
-                logger.verbose(TAG, "SOCKS5: Success response sent")
+                logger.verbose(TAG, "SOCKS5: Success response sent (7 bytes)")
                 
                 // Start bidirectional relay
+                logger.verbose(TAG, "SOCKS5: Starting relay for $destHost:$destPort")
                 relayData(clientSocket, remoteSocket)
+                logger.verbose(TAG, "SOCKS5: Relay completed for $destHost:$destPort")
                 
             } catch (e: Exception) {
-                logger.error(TAG, "SOCKS5: Failed to establish SSH tunnel to $destHost:$destPort", e)
-                sendSocks5Error(output, 0x05) // Connection refused
-                clientSocket.close()
+                logger.error(TAG, "SOCKS5: Failed to establish SSH tunnel to $destHost:$destPort: ${e.javaClass.simpleName}: ${e.message}", e)
+                try {
+                    sendSocks5Error(output, 0x05) // Connection refused
+                } catch (ex: Exception) {
+                    logger.verbose(TAG, "SOCKS5: Failed to send error response: ${ex.message}")
+                }
+                try {
+                    clientSocket.close()
+                } catch (ex: Exception) {
+                    // Ignore
+                }
             }
             
         } catch (e: Exception) {
@@ -498,60 +519,107 @@ class AndroidSSHClient(
      * Relays data bidirectionally between client and remote sockets.
      */
     private fun relayData(clientSocket: java.net.Socket, remoteSocket: net.schmizz.sshj.connection.channel.direct.DirectConnection) {
+        logger.info(TAG, "SOCKS5: Starting bidirectional relay")
+        
+        var clientToRemoteBytes = 0L
+        var remoteToClientBytes = 0L
+        
         val clientToRemote = Thread {
             try {
+                logger.info(TAG, "SOCKS5: Client->Remote relay thread started")
                 val buffer = ByteArray(8192)
                 val input = clientSocket.getInputStream()
                 val output = remoteSocket.outputStream
                 var bytesRead: Int
                 while (input.read(buffer).also { bytesRead = it } != -1) {
+                    logger.verbose(TAG, "SOCKS5: Client->Remote: read $bytesRead bytes")
                     output.write(buffer, 0, bytesRead)
                     output.flush()
+                    clientToRemoteBytes += bytesRead
+                    logger.verbose(TAG, "SOCKS5: Client->Remote: wrote $bytesRead bytes (total: $clientToRemoteBytes)")
                 }
+                logger.info(TAG, "SOCKS5: Client->Remote relay ended normally (EOF), total: $clientToRemoteBytes bytes")
+            } catch (e: java.net.SocketException) {
+                // Socket closed by other thread - this is normal during shutdown
+                logger.verbose(TAG, "SOCKS5: Client->Remote relay ended (socket closed), total: $clientToRemoteBytes bytes")
             } catch (e: Exception) {
-                logger.verbose(TAG, "SOCKS5: Client to remote relay ended: ${e.message}")
+                logger.error(TAG, "SOCKS5: Client->Remote relay error: ${e.javaClass.simpleName}: ${e.message}", e)
             } finally {
-                try {
-                    remoteSocket.close()
-                } catch (e: Exception) {
-                    // Ignore
-                }
+                // Don't close anything here - let the main thread handle cleanup
+                logger.verbose(TAG, "SOCKS5: Client->Remote relay thread finished")
             }
         }
         
         val remoteToClient = Thread {
             try {
+                logger.info(TAG, "SOCKS5: Remote->Client relay thread started")
                 val buffer = ByteArray(8192)
                 val input = remoteSocket.inputStream
                 val output = clientSocket.getOutputStream()
+                
+                logger.verbose(TAG, "SOCKS5: Remote->Client: waiting for data from SSH tunnel...")
                 var bytesRead: Int
+                var readCount = 0
                 while (input.read(buffer).also { bytesRead = it } != -1) {
+                    readCount++
+                    logger.info(TAG, "SOCKS5: Remote->Client: read #$readCount: $bytesRead bytes from SSH tunnel")
+                    
+                    // Log first few bytes for debugging (only for small packets)
+                    if (bytesRead <= 20) {
+                        val hexBytes = buffer.take(bytesRead).joinToString(" ") { "%02x".format(it) }
+                        logger.verbose(TAG, "SOCKS5: Remote->Client: data hex: $hexBytes")
+                    }
+                    
                     output.write(buffer, 0, bytesRead)
                     output.flush()
+                    remoteToClientBytes += bytesRead
+                    logger.info(TAG, "SOCKS5: Remote->Client: wrote $bytesRead bytes to client (total: $remoteToClientBytes)")
                 }
+                logger.info(TAG, "SOCKS5: Remote->Client relay ended normally (EOF after $readCount reads), total: $remoteToClientBytes bytes")
+                
+                if (remoteToClientBytes == 0L) {
+                    logger.warn(TAG, "SOCKS5: Remote->Client received EOF immediately with 0 bytes - remote server closed connection!")
+                }
+            } catch (e: java.net.SocketException) {
+                // Socket closed by other thread - this is normal during shutdown
+                logger.verbose(TAG, "SOCKS5: Remote->Client relay ended (socket closed), total: $remoteToClientBytes bytes")
             } catch (e: Exception) {
-                logger.verbose(TAG, "SOCKS5: Remote to client relay ended: ${e.message}")
+                logger.error(TAG, "SOCKS5: Remote->Client relay error: ${e.javaClass.simpleName}: ${e.message}", e)
             } finally {
-                try {
-                    clientSocket.close()
-                } catch (e: Exception) {
-                    // Ignore
-                }
+                // Don't close anything here - let the main thread handle cleanup
+                logger.verbose(TAG, "SOCKS5: Remote->Client relay thread finished")
             }
         }
         
         clientToRemote.start()
         remoteToClient.start()
         
+        logger.verbose(TAG, "SOCKS5: Both relay threads started, waiting for completion...")
+        
         // Wait for both threads to complete
         try {
             clientToRemote.join()
             remoteToClient.join()
         } catch (e: InterruptedException) {
-            logger.verbose(TAG, "SOCKS5: Relay interrupted")
+            logger.warn(TAG, "SOCKS5: Relay interrupted")
         }
         
-        logger.verbose(TAG, "SOCKS5: Connection relay completed")
+        // Now that both threads are done, close both sockets
+        try {
+            logger.verbose(TAG, "SOCKS5: Closing remote socket")
+            remoteSocket.close()
+        } catch (e: Exception) {
+            logger.verbose(TAG, "SOCKS5: Error closing remote socket: ${e.message}")
+        }
+        
+        try {
+            logger.verbose(TAG, "SOCKS5: Closing client socket")
+            clientSocket.close()
+        } catch (e: Exception) {
+            logger.verbose(TAG, "SOCKS5: Error closing client socket: ${e.message}")
+        }
+        
+        logger.info(TAG, "SOCKS5: Connection relay completed - Client->Remote: $clientToRemoteBytes bytes, Remote->Client: $remoteToClientBytes bytes")
     }
     
     override suspend fun sendKeepAlive(session: SSHSession): Result<Unit> = withContext(Dispatchers.IO) {

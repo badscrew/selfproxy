@@ -4,6 +4,13 @@
 
 This specification defines the requirements for implementing SOCKS5 UDP ASSOCIATE functionality in the SSH Tunnel Proxy VPN application. This feature will enable UDP-based applications such as video calling (WhatsApp, Telegram, Zoom, Discord), voice chat, and online gaming to work through the VPN tunnel. Currently, only DNS queries (UDP port 53) are supported; this enhancement will add support for all UDP traffic.
 
+**CRITICAL CONSTRAINT**: Standard OpenSSH dynamic forwarding (`ssh -D`) does **NOT** support SOCKS5 UDP ASSOCIATE (command 0x03). This feature requires either:
+1. A dedicated SOCKS5 server with UDP support (e.g., Dante, Shadowsocks, 3proxy)
+2. A custom SSH server implementation with UDP relay capabilities
+3. An alternative tunneling approach (e.g., tun2socks, VPN-over-SSH)
+
+**Current Status**: The application correctly implements SOCKS5 UDP ASSOCIATE protocol, but most SSH servers reject the command with error 0x07 (Command not supported). This is a **server-side limitation**, not a client implementation issue.
+
 ## Glossary
 
 - **SOCKS5**: A protocol that routes network packets between a client and server through a proxy server
@@ -140,17 +147,43 @@ This specification defines the requirements for implementing SOCKS5 UDP ASSOCIAT
 
 ### Requirement 11: Compatibility and Standards Compliance
 
-**User Story:** As a developer, I want the implementation to follow SOCKS5 RFC 1928 standards, so that it works with any compliant SOCKS5 server.
+**User Story:** As a developer, I want the implementation to follow SOCKS5 RFC 1928 standards, so that it works with any compliant SOCKS5 server that supports UDP ASSOCIATE.
 
 #### Acceptance Criteria
 
 1. WHEN implementing UDP ASSOCIATE, THEN the system SHALL follow RFC 1928 Section 7 (UDP ASSOCIATE)
 2. WHEN constructing SOCKS5 UDP headers, THEN the system SHALL use the format specified in RFC 1928
 3. WHEN handling fragmentation, THEN the system SHALL set FRAG=0x00 (no fragmentation) as most SOCKS5 servers don't support it
-4. WHEN the SOCKS5 server doesn't support UDP ASSOCIATE, THEN the system SHALL detect this and log an appropriate error
-5. WHEN testing compatibility, THEN the system SHALL work with OpenSSH dynamic forwarding (ssh -D)
+4. WHEN the SOCKS5 server doesn't support UDP ASSOCIATE (REP=0x07), THEN the system SHALL detect this, log an appropriate error, and inform the user that their SSH server doesn't support UDP
+5. WHEN testing compatibility, THEN the system SHALL work with SOCKS5 servers that support UDP ASSOCIATE (e.g., Dante, Shadowsocks, 3proxy)
 
-### Requirement 12: Testing and Validation
+**Note**: OpenSSH dynamic forwarding (`ssh -D`) does **NOT** support UDP ASSOCIATE and will return error 0x07. This is a known limitation of OpenSSH's SOCKS5 implementation.
+
+### Requirement 12: Server Capability Detection and User Notification
+
+**User Story:** As a VPN user, I want to be informed when my SSH server doesn't support UDP traffic, so that I understand why video calling doesn't work and what I can do about it.
+
+#### Acceptance Criteria
+
+1. WHEN the first UDP ASSOCIATE request fails with error 0x07 (Command not supported), THEN the system SHALL mark the server as "UDP not supported" in the connection state
+2. WHEN a server is marked as "UDP not supported", THEN the system SHALL NOT attempt UDP ASSOCIATE for subsequent UDP packets from that session
+3. WHEN UDP is not supported, THEN the system SHALL display a persistent notification to the user: "Your SSH server doesn't support UDP traffic. Video calling and voice chat will not work. TCP traffic (web browsing) works normally."
+4. WHEN displaying the connection status in the UI, THEN the system SHALL show "TCP Only" or "TCP + UDP" badge based on server capabilities
+5. WHEN the user taps on the "TCP Only" badge, THEN the system SHALL show a dialog explaining: "Your SSH server (OpenSSH) doesn't support UDP ASSOCIATE. To enable video calling, you need a SOCKS5 server with UDP support like Dante, Shadowsocks, or 3proxy."
+
+### Requirement 13: Fallback Behavior for Unsupported Servers
+
+**User Story:** As a VPN user with an SSH server that doesn't support UDP, I want the VPN to continue working for TCP traffic, so that web browsing and other TCP applications still function.
+
+#### Acceptance Criteria
+
+1. WHEN UDP ASSOCIATE is not supported, THEN the system SHALL continue routing TCP traffic normally
+2. WHEN UDP ASSOCIATE is not supported, THEN DNS queries SHALL continue to work via the existing TCP-based DNS resolution
+3. WHEN UDP ASSOCIATE is not supported, THEN UDP packets (except DNS) SHALL be dropped with a log message
+4. WHEN dropping UDP packets, THEN the system SHALL increment a "droppedUdpPackets" counter for statistics
+5. WHEN the user checks statistics, THEN the system SHALL display the number of dropped UDP packets and explain why they were dropped
+
+### Requirement 14: Testing and Validation
 
 **User Story:** As a quality assurance engineer, I want comprehensive tests for UDP functionality, so that I can verify correct behavior.
 

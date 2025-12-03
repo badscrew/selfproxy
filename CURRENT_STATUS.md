@@ -14,18 +14,16 @@ The SSH Tunnel Proxy has successfully migrated from JSch to sshj library. The mi
 
 ## What's Working ✅
 
-1. **SSH Connection**: Successfully establishes SSH connection to server using sshj
-2. **SOCKS5 Proxy Creation**: sshj creates a fully functional SOCKS5 proxy
-3. **SOCKS5 Protocol**: Complete SOCKS5 handshake and CONNECT request support
-4. **TCP Traffic**: Web browsing and all TCP-based applications work correctly
-5. **VPN Interface**: VPN interface is created and active
-6. **VPN Permission Flow**: Auto-retry after permission grant works correctly
-7. **DNS Resolution**: DNS queries are resolved through the tunnel
-8. **Packet Routing**: Packets are correctly routed from TUN interface through SOCKS5
-9. **State Management**: Connection state tracking works properly
-10. **Keep-Alive**: SSH keep-alive packets maintain connection stability
-11. **Error Handling**: Comprehensive error mapping and user-friendly messages
-12. **Security**: Strong encryption, key-only authentication, host key verification
+1. **SSH Connection**: Successfully establishes SSH connection to server using sshj ✅
+2. **SOCKS5 Proxy Creation**: sshj creates a SOCKS5 proxy server ✅
+3. **SOCKS5 Handshake**: TCPHandler performs SOCKS5 handshake correctly ✅
+4. **VPN Interface**: VPN interface is created and active ✅
+5. **VPN Permission Flow**: Auto-retry after permission grant works correctly ✅
+6. **DNS Resolution**: DNS queries are resolved (locally as fallback) ✅
+7. **State Management**: Connection state tracking works properly ✅
+8. **Keep-Alive**: SSH keep-alive packets maintain connection stability ✅
+9. **Error Handling**: Comprehensive error mapping and user-friendly messages ✅
+10. **Security**: Strong encryption, key-only authentication, host key verification ✅
 
 ---
 
@@ -84,25 +82,60 @@ Integration tests passing:
 
 ---
 
-## What's Working Now (Previously Broken) ✅
+## What's NOT Working ❌
 
-1. **Web Browsing**: Can browse websites through the tunnel ✅
-2. **TCP Traffic**: All TCP connections work correctly ✅
-3. **HTTPS**: Secure connections work properly ✅
-4. **Actual Tunneling**: Traffic flows through SSH tunnel ✅
-5. **SOCKS5 Handshake**: Proper SOCKS5 protocol implementation ✅
+1. **Bidirectional Data Relay**: Data flows from client to server, but responses don't come back ❌
+   - **Symptom**: Connections show "sent=695 bytes, received=7 bytes" (only SOCKS5 header)
+   - **Root Cause**: After SOCKS5 handshake, data relay isn't working properly
+   - **Evidence**: SSL handshake failures in Chrome, connection timeouts
+   
+2. **Web Browsing**: Cannot browse websites ❌
+   - TCP connections establish
+   - SOCKS5 handshake succeeds
+   - But HTTP/HTTPS requests timeout because responses don't return
+
+3. **TCP Data Flow**: Only outbound data works, inbound data is missing ❌
 
 ---
 
+## Root Cause Analysis
+
+### The Problem: Bidirectional Relay Failure
+
+**Observation from logs:**
+```
+TCP connection closed: sent=695 bytes, received=7 bytes
+TCP connection closed: sent=1072 bytes, received=7 bytes
+SSL handshake failed: net_error -113 (SSL_ERROR_NO_CYPHER_OVERLAP)
+```
+
+**Analysis:**
+1. TCPHandler connects to SOCKS5 proxy (127.0.0.1:41331) ✅
+2. TCPHandler performs SOCKS5 handshake ✅
+3. SOCKS5 proxy returns success response (7 bytes) ✅
+4. TCPHandler sends HTTP/TLS data to SOCKS5 socket ✅
+5. **BUT**: Response data from remote server never comes back ❌
+
+**Hypothesis:**
+The issue is in how the SOCKS5 proxy relay is implemented. The `relayData()` function in AndroidSSHClient creates two threads for bidirectional relay, but there may be a timing issue or the relay isn't starting properly after the handshake completes.
+
+**Next Steps:**
+1. Add detailed logging to `relayData()` function to see if threads are starting
+2. Check if `remoteSocket.inputStream` is actually receiving data from SSH tunnel
+3. Verify that data is being written to `clientSocket.getOutputStream()`
+4. Consider if there's a buffering or flushing issue
+
 ## Known Limitations
 
-1. **UDP ASSOCIATE**: Not yet implemented (video calling support pending)
-   - WhatsApp calls: Not supported yet
-   - Zoom meetings: Not supported yet
-   - Discord voice: Not supported yet
-   - Online gaming: Not supported yet
+1. **TCP Data Relay**: Bidirectional relay not working - responses don't return from remote server
+   - This blocks ALL internet traffic (web browsing, apps, etc.)
+   - Root cause under investigation
 
-2. **DNS Leak**: DNS queries currently resolved locally (workaround in place)
+2. **UDP ASSOCIATE**: Not yet implemented (video calling support pending)
+   - OpenSSH doesn't support UDP ASSOCIATE command
+   - Would need alternative SOCKS5 server (Dante, Shadowsocks, 3proxy)
+
+3. **DNS Leak**: DNS queries currently resolved locally (workaround in place)
    - Security consideration: DNS queries not tunneled
    - Future enhancement: Implement DNS-over-SOCKS5
 
@@ -141,16 +174,18 @@ Integration tests passing:
 
 ## Testing Checklist
 
-- [x] SSH connection establishes
-- [x] SOCKS5 proxy reports as created
-- [x] VPN interface activates
-- [x] VPN key icon appears
-- [x] DNS queries resolve
-- [x] TCP connections work through SOCKS5 ✅ **FIXED**
-- [x] Web browsing works ✅ **FIXED**
-- [x] HTTPS works ✅ **FIXED**
-- [ ] UDP traffic works ⚠️ **PENDING** (UDP ASSOCIATE not yet implemented)
-- [ ] Video calling works ⚠️ **PENDING** (requires UDP ASSOCIATE)
+- [x] SSH connection establishes ✅
+- [x] SOCKS5 proxy server starts ✅
+- [x] VPN interface activates ✅
+- [x] VPN key icon appears ✅
+- [x] DNS queries resolve (locally) ✅
+- [x] TCP connections establish ✅
+- [x] SOCKS5 handshake succeeds ✅
+- [ ] Bidirectional data relay works ❌ **BROKEN** - responses don't return
+- [ ] Web browsing works ❌ **BROKEN** - timeouts due to no responses
+- [ ] HTTPS works ❌ **BROKEN** - SSL handshake fails
+- [ ] UDP traffic works ⚠️ **BLOCKED** (OpenSSH doesn't support UDP ASSOCIATE)
+- [ ] Video calling works ⚠️ **BLOCKED** (requires UDP ASSOCIATE)
 
 ---
 
@@ -210,11 +245,17 @@ All criteria met:
 
 ## Conclusion
 
-The migration from JSch to sshj has been **successfully completed**. The application now has a fully functional SOCKS5 proxy that properly implements the SOCKS5 protocol, enabling web browsing and all TCP-based traffic to flow through the SSH tunnel.
+The migration from JSch to sshj is **partially complete**. The SOCKS5 proxy server is running and handshakes succeed, but **bidirectional data relay is broken**. Response data from remote servers is not being relayed back to the client, causing all internet traffic to fail.
 
-**Status**: The app is now **functionally working** for TCP traffic. UDP support (video calling) is the next priority for implementation.
+**Status**: The app is **NOT functionally working**. TCP connections establish but data doesn't flow bidirectionally.
 
-**Recommendation**: Begin implementing UDP ASSOCIATE support to enable video calling applications.
+**Critical Issue**: The `relayData()` function in AndroidSSHClient needs debugging. Response data from the SSH tunnel is not reaching the SOCKS5 client.
+
+**Recommendation**: 
+1. **IMMEDIATE**: Fix the bidirectional relay in `relayData()` function
+2. Add detailed logging to track data flow through relay threads
+3. Verify SSH tunnel `DirectConnection` is receiving data
+4. Check for buffering/flushing issues in relay threads
 
 ---
 
