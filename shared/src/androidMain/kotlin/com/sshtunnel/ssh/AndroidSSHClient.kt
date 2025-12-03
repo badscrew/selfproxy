@@ -532,6 +532,8 @@ class AndroidSSHClient(
                 val output = remoteSocket.outputStream
                 var bytesRead: Int
                 var readCount = 0
+                var isFirstTlsRecord = true
+                
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     readCount++
                     logger.verbose(TAG, "SOCKS5: Client->Remote: read #$readCount: $bytesRead bytes")
@@ -544,6 +546,46 @@ class AndroidSSHClient(
                         if (buffer[0] == 0x16.toByte() && buffer[1] == 0x03.toByte()) {
                             logger.info(TAG, "SOCKS5: Client->Remote: TLS ClientHello detected")
                         }
+                    }
+                    
+                    // For TLS ClientHello, try to buffer the complete record
+                    if (isFirstTlsRecord && readCount == 1 && bytesRead >= 5 && 
+                        buffer[0] == 0x16.toByte() && buffer[1] == 0x03.toByte()) {
+                        // TLS record format: [type:1][version:2][length:2][data:length]
+                        val recordLength = ((buffer[3].toInt() and 0xFF) shl 8) or (buffer[4].toInt() and 0xFF)
+                        val totalLength = 5 + recordLength
+                        
+                        logger.verbose(TAG, "SOCKS5: Client->Remote: TLS record length=$recordLength, total=$totalLength, received=$bytesRead")
+                        
+                        if (bytesRead < totalLength) {
+                            // Need to read more data to complete the TLS record
+                            logger.info(TAG, "SOCKS5: Client->Remote: Buffering incomplete TLS record (need ${totalLength - bytesRead} more bytes)")
+                            val completeRecord = ByteArray(totalLength)
+                            System.arraycopy(buffer, 0, completeRecord, 0, bytesRead)
+                            var totalRead = bytesRead
+                            
+                            while (totalRead < totalLength) {
+                                val remaining = totalLength - totalRead
+                                val chunk = input.read(buffer, 0, Math.min(remaining, buffer.size))
+                                if (chunk == -1) {
+                                    logger.warn(TAG, "SOCKS5: Client->Remote: EOF while reading TLS record")
+                                    break
+                                }
+                                System.arraycopy(buffer, 0, completeRecord, totalRead, chunk)
+                                totalRead += chunk
+                                readCount++
+                                logger.verbose(TAG, "SOCKS5: Client->Remote: read #$readCount: $chunk bytes (buffering, total: $totalRead/$totalLength)")
+                            }
+                            
+                            // Write the complete TLS record
+                            output.write(completeRecord, 0, totalRead)
+                            output.flush()
+                            clientToRemoteBytes += totalRead
+                            logger.info(TAG, "SOCKS5: Client->Remote: wrote complete TLS record: $totalRead bytes")
+                            isFirstTlsRecord = false
+                            continue
+                        }
+                        isFirstTlsRecord = false
                     }
                     
                     output.write(buffer, 0, bytesRead)
