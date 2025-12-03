@@ -447,6 +447,17 @@ class AndroidSSHClient(
                 val remoteSocket = ssh.newDirectConnection(destHost, destPort)
                 logger.info(TAG, "SOCKS5: SSH tunnel established to $destHost:$destPort")
                 
+                // Log SSH channel details for debugging
+                try {
+                    val channel = remoteSocket.javaClass.getDeclaredField("chan")
+                    channel.isAccessible = true
+                    val channelObj = channel.get(remoteSocket)
+                    logger.verbose(TAG, "SOCKS5: SSH channel type: ${channelObj?.javaClass?.simpleName}")
+                    logger.verbose(TAG, "SOCKS5: SSH channel object: $channelObj")
+                } catch (e: Exception) {
+                    logger.verbose(TAG, "SOCKS5: Could not inspect SSH channel: ${e.message}")
+                }
+                
                 // Verify the connection is actually open
                 if (remoteSocket.inputStream == null || remoteSocket.outputStream == null) {
                     logger.error(TAG, "SOCKS5: SSH tunnel has null streams!")
@@ -456,6 +467,8 @@ class AndroidSSHClient(
                 }
                 
                 logger.verbose(TAG, "SOCKS5: SSH tunnel streams verified")
+                logger.verbose(TAG, "SOCKS5: Input stream type: ${remoteSocket.inputStream.javaClass.simpleName}")
+                logger.verbose(TAG, "SOCKS5: Output stream type: ${remoteSocket.outputStream.javaClass.simpleName}")
                 
                 // Send success response
                 // Format: VER(1) REP(1) RSV(1) ATYP(1) BND.ADDR(var) BND.PORT(2)
@@ -594,17 +607,33 @@ class AndroidSSHClient(
                         isFirstTlsRecord = false
                     }
                     
-                    output.write(buffer, 0, bytesRead)
-                    output.flush()
-                    clientToRemoteBytes += bytesRead
-                    logger.verbose(TAG, "SOCKS5: Client->Remote: wrote $bytesRead bytes (total: $clientToRemoteBytes)")
+                    try {
+                        output.write(buffer, 0, bytesRead)
+                        output.flush()
+                        clientToRemoteBytes += bytesRead
+                        logger.verbose(TAG, "SOCKS5: Client->Remote: wrote $bytesRead bytes (total: $clientToRemoteBytes)")
+                    } catch (e: Exception) {
+                        logger.error(TAG, "SOCKS5: Client->Remote: Write failed after $clientToRemoteBytes bytes: ${e.javaClass.simpleName}: ${e.message}")
+                        logger.error(TAG, "SOCKS5: Client->Remote: Write error cause: ${e.cause?.javaClass?.simpleName}: ${e.cause?.message}")
+                        throw e
+                    }
                 }
                 logger.info(TAG, "SOCKS5: Client->Remote relay ended normally (EOF after $readCount reads), total: $clientToRemoteBytes bytes")
             } catch (e: java.net.SocketException) {
                 // Socket closed by other thread - this is normal during shutdown
                 logger.verbose(TAG, "SOCKS5: Client->Remote relay ended (socket closed), total: $clientToRemoteBytes bytes")
+            } catch (e: net.schmizz.sshj.connection.ConnectionException) {
+                // SSH connection-level error - this is the "Stream closed" error
+                logger.error(TAG, "SOCKS5: Client->Remote SSH connection error: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Client->Remote SSH error details: cause=${e.cause?.javaClass?.simpleName}, causeMsg=${e.cause?.message}")
+                logger.error(TAG, "SOCKS5: Client->Remote bytes transferred before error: $clientToRemoteBytes")
+            } catch (e: java.io.IOException) {
+                // I/O error on stream
+                logger.error(TAG, "SOCKS5: Client->Remote I/O error: ${e.javaClass.simpleName}: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Client->Remote bytes transferred before error: $clientToRemoteBytes")
             } catch (e: Exception) {
                 logger.error(TAG, "SOCKS5: Client->Remote relay error: ${e.javaClass.simpleName}: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Client->Remote bytes transferred before error: $clientToRemoteBytes")
             } finally {
                 // Don't close anything here - let the main thread handle cleanup
                 logger.verbose(TAG, "SOCKS5: Client->Remote relay thread finished")
@@ -644,8 +673,18 @@ class AndroidSSHClient(
             } catch (e: java.net.SocketException) {
                 // Socket closed by other thread - this is normal during shutdown
                 logger.verbose(TAG, "SOCKS5: Remote->Client relay ended (socket closed), total: $remoteToClientBytes bytes")
+            } catch (e: net.schmizz.sshj.connection.ConnectionException) {
+                // SSH connection-level error
+                logger.error(TAG, "SOCKS5: Remote->Client SSH connection error: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Remote->Client SSH error details: cause=${e.cause?.javaClass?.simpleName}, causeMsg=${e.cause?.message}")
+                logger.error(TAG, "SOCKS5: Remote->Client bytes transferred before error: $remoteToClientBytes")
+            } catch (e: java.io.IOException) {
+                // I/O error on stream
+                logger.error(TAG, "SOCKS5: Remote->Client I/O error: ${e.javaClass.simpleName}: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Remote->Client bytes transferred before error: $remoteToClientBytes")
             } catch (e: Exception) {
                 logger.error(TAG, "SOCKS5: Remote->Client relay error: ${e.javaClass.simpleName}: ${e.message}", e)
+                logger.error(TAG, "SOCKS5: Remote->Client bytes transferred before error: $remoteToClientBytes")
             } finally {
                 // Don't close anything here - let the main thread handle cleanup
                 logger.verbose(TAG, "SOCKS5: Remote->Client relay thread finished")
