@@ -60,6 +60,10 @@ android {
     }
 }
 
+kapt {
+    correctErrorTypes = false
+}
+
 dependencies {
     implementation(project(":shared"))
     

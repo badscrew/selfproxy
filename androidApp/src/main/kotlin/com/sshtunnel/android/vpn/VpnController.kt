@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import com.sshtunnel.connection.ConnectionManager
 import com.sshtunnel.data.ConnectionState
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,7 +29,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class VpnController @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val connectionManager: ConnectionManager
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())

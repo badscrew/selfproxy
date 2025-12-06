@@ -342,6 +342,7 @@
 
 
 
+
   - Remove SSH-related DI modules
   - Add Shadowsocks client to DI
   - Add ConnectionManager to DI
@@ -350,7 +351,12 @@
   - Update ViewModels with new dependencies
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-- [ ] 20. Checkpoint - Ensure all tests pass
+- [x] 20. Checkpoint - Ensure all tests pass
+
+
+
+
+
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 21. Write integration tests
