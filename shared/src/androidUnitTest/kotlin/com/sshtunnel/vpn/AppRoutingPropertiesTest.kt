@@ -16,6 +16,20 @@ import org.junit.Test
  */
 class AppRoutingPropertiesTest {
     
+    // Data classes for testing
+    
+    data class RoutingConfig(
+        val excludedApps: Set<String>,
+        val routingMode: RoutingMode
+    )
+    
+    enum class RoutingMode {
+        ROUTE_ALL_EXCEPT_EXCLUDED,
+        ROUTE_ONLY_INCLUDED
+    }
+    
+    // Generators
+    
     /**
      * Property 20: App routing exclusion correctness
      * Feature: ssh-tunnel-proxy, Property 20: App routing exclusion correctness
@@ -243,5 +257,24 @@ class AppRoutingPropertiesTest {
             config.excludedApps.size shouldBe 1
             config.excludedApps shouldContain packageName
         }
+    }
+    
+    // Generator functions
+    
+    private fun Arb.Companion.packageName() = arbitrary {
+        val parts = Arb.list(Arb.string(3..10, Codepoint.alphanumeric()), 2..4).bind()
+        parts.joinToString(".")
+    }
+    
+    private fun Arb.Companion.packageNames() = arbitrary {
+        val count = Arb.int(1, 10).bind()
+        (1..count).map { Arb.packageName().bind() }.toSet()
+    }
+    
+    private fun Arb.Companion.routingConfig() = arbitrary {
+        RoutingConfig(
+            excludedApps = Arb.packageNames().bind(),
+            routingMode = Arb.enum<RoutingMode>().bind()
+        )
     }
 }
