@@ -157,6 +157,7 @@
 
 
 
+
   - Update TunnelVpnService to work with Shadowsocks
   - Implement TUN interface creation with proper routing
   - Implement DNS server configuration to prevent leaks
@@ -177,7 +178,11 @@
   - **Property 10: Excluded apps bypass VPN tunnel**
   - **Validates: Requirements 5.2**
 
-- [ ] 10. Implement AppRoutingRepository
+- [x] 10. Implement AppRoutingRepository
+
+
+
+
   - Create AppRoutingRepository interface in shared module
   - Implement getExcludedApps() using database
   - Implement setExcludedApps() with persistence
@@ -185,7 +190,9 @@
   - Add validation for package names
   - _Requirements: 5.3, 5.4, 5.5_
 
-- [ ] 10.1 Write property test for app routing persistence
+- [x] 10.1 Write property test for app routing persistence
+
+
   - **Property 5: App routing configuration persists correctly**
   - **Validates: Requirements 5.3, 5.4, 5.5**
 

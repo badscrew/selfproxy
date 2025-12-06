@@ -13,12 +13,9 @@ CREATE TABLE server_profiles (
 );
 
 -- App Routing Configuration Table
--- Stores per-app routing settings for each profile
+-- Stores excluded app package names for VPN routing
 CREATE TABLE app_routing_config (
-    profileId INTEGER PRIMARY KEY NOT NULL,
-    excludedPackages TEXT NOT NULL,
-    routingMode TEXT NOT NULL,
-    FOREIGN KEY (profileId) REFERENCES server_profiles(id) ON DELETE CASCADE
+    packageName TEXT PRIMARY KEY NOT NULL
 );
 
 -- Server Profiles Queries
@@ -48,12 +45,18 @@ DELETE FROM server_profiles WHERE id = ?;
 
 -- App Routing Configuration Queries
 
-selectRoutingConfig:
-SELECT * FROM app_routing_config WHERE profileId = ?;
+selectAllExcludedApps:
+SELECT packageName FROM app_routing_config;
 
-insertRoutingConfig:
-INSERT OR REPLACE INTO app_routing_config(profileId, excludedPackages, routingMode)
-VALUES (?, ?, ?);
+insertExcludedApp:
+INSERT OR IGNORE INTO app_routing_config(packageName)
+VALUES (?);
 
-deleteRoutingConfig:
-DELETE FROM app_routing_config WHERE profileId = ?;
+deleteExcludedApp:
+DELETE FROM app_routing_config WHERE packageName = ?;
+
+deleteAllExcludedApps:
+DELETE FROM app_routing_config;
+
+isAppExcluded:
+SELECT COUNT(*) > 0 FROM app_routing_config WHERE packageName = ?;

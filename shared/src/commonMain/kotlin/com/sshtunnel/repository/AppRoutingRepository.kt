@@ -1,35 +1,39 @@
 package com.sshtunnel.repository
 
-import com.sshtunnel.data.AppRoutingConfig
-import com.sshtunnel.data.RoutingMode
-
 /**
  * Repository interface for managing app routing configurations.
  * 
- * Handles persistence of per-app routing settings for each server profile.
+ * Handles persistence of per-app VPN routing settings, allowing users to
+ * exclude specific apps from the VPN tunnel.
  */
 interface AppRoutingRepository {
     /**
-     * Gets the routing configuration for a specific profile.
+     * Gets the set of excluded app package names.
      * 
-     * @param profileId The profile ID
-     * @return The routing configuration, or null if not found
+     * Apps in this set will bypass the VPN tunnel and use direct network access.
+     * 
+     * @return Set of package names that are excluded from the VPN
      */
-    suspend fun getRoutingConfig(profileId: Long): AppRoutingConfig?
+    suspend fun getExcludedApps(): Set<String>
     
     /**
-     * Saves or updates the routing configuration for a profile.
+     * Sets the excluded app package names.
      * 
-     * @param config The routing configuration to save
+     * Replaces the current exclusion list with the provided set.
+     * Package names are validated before persistence.
+     * 
+     * @param packageNames Set of package names to exclude from the VPN
      * @return Result indicating success or failure
      */
-    suspend fun saveRoutingConfig(config: AppRoutingConfig): Result<Unit>
+    suspend fun setExcludedApps(packageNames: Set<String>): Result<Unit>
     
     /**
-     * Deletes the routing configuration for a profile.
+     * Checks if a specific app is excluded from the VPN.
      * 
-     * @param profileId The profile ID
-     * @return Result indicating success or failure
+     * Provides quick lookup without loading the entire exclusion set.
+     * 
+     * @param packageName The package name to check
+     * @return true if the app is excluded, false otherwise
      */
-    suspend fun deleteRoutingConfig(profileId: Long): Result<Unit>
+    suspend fun isAppExcluded(packageName: String): Boolean
 }
