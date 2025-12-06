@@ -49,13 +49,18 @@
 
 
 
+
   - Modify server_profiles table to include Shadowsocks fields (server_host, server_port, cipher)
   - Remove SSH-specific fields (username, key_type, etc.)
   - Create migration script from old schema to new schema
   - Update SQLDelight queries for new schema
   - _Requirements: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 5. Implement ProfileRepository for Shadowsocks profiles
+- [x] 5. Implement ProfileRepository for Shadowsocks profiles
+
+
+
+
   - Update ProfileRepository interface for Shadowsocks fields
   - Implement createProfile with validation
   - Implement getProfile, getAllProfiles, updateProfile, deleteProfile
@@ -63,11 +68,15 @@
   - Update last_used timestamp on profile access
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 5.1 Write property test for profile repository
+- [x] 5.1 Write property test for profile repository
+
+
   - **Property 1: Profile CRUD operations maintain data integrity**
   - **Validates: Requirements 1.1, 1.2, 1.3**
 
-- [ ] 5.2 Write property test for profile deletion
+- [x] 5.2 Write property test for profile deletion
+
+
   - **Property 3: Profile deletion removes all associated data**
   - **Validates: Requirements 1.4, 2.3**
 

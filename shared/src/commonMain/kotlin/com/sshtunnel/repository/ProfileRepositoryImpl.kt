@@ -24,8 +24,51 @@ class ProfileRepositoryImpl(
     
     private val queries = database.databaseQueries
     
+    /**
+     * Validates a server profile according to requirements.
+     * 
+     * Validation rules:
+     * - Name must not be blank
+     * - Server host must not be blank
+     * - Port must be in valid range (1-65535)
+     * - Cipher must be one of the supported methods
+     * 
+     * @param profile The profile to validate
+     * @return Result indicating success or validation error
+     */
+    private fun validateProfile(profile: ServerProfile): Result<Unit> {
+        // Validate name
+        if (profile.name.isBlank()) {
+            return Result.failure(
+                ProfileRepositoryException("Profile name cannot be blank")
+            )
+        }
+        
+        // Validate server host
+        if (profile.serverHost.isBlank()) {
+            return Result.failure(
+                ProfileRepositoryException("Server host cannot be blank")
+            )
+        }
+        
+        // Validate port range (1-65535)
+        if (profile.serverPort !in 1..65535) {
+            return Result.failure(
+                ProfileRepositoryException("Server port must be between 1 and 65535, got ${profile.serverPort}")
+            )
+        }
+        
+        // Cipher validation is implicit through enum type
+        // All CipherMethod enum values are valid
+        
+        return Result.success(Unit)
+    }
+    
     override suspend fun createProfile(profile: ServerProfile): Result<Long> = withContext(Dispatchers.Default) {
         try {
+            // Validate profile before creating
+            validateProfile(profile).getOrElse { return@withContext Result.failure(it) }
+            
             queries.insertProfile(
                 name = profile.name,
                 serverHost = profile.serverHost,
@@ -51,7 +94,7 @@ class ProfileRepositoryImpl(
     
     override suspend fun getProfile(id: Long): ServerProfile? = withContext(Dispatchers.Default) {
         try {
-            queries.selectProfileById(id)
+            val profile = queries.selectProfileById(id)
                 .asFlow()
                 .mapToOneOrNull(Dispatchers.Default)
                 .first()
@@ -66,6 +109,16 @@ class ProfileRepositoryImpl(
                         lastUsed = dbProfile.lastUsed
                     )
                 }
+            
+            // Update last_used timestamp when profile is accessed
+            if (profile != null) {
+                queries.updateLastUsed(
+                    lastUsed = System.currentTimeMillis(),
+                    id = id
+                )
+            }
+            
+            profile
         } catch (e: Exception) {
             null
         }
@@ -100,6 +153,9 @@ class ProfileRepositoryImpl(
                     ProfileRepositoryException("Cannot update profile with id 0")
                 )
             }
+            
+            // Validate profile before updating
+            validateProfile(profile).getOrElse { return@withContext Result.failure(it) }
             
             queries.updateProfile(
                 name = profile.name,
