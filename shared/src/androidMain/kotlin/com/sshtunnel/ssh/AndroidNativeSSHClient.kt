@@ -49,6 +49,9 @@ class AndroidNativeSSHClient(
     // Recent SSH events for diagnostics
     private val recentEvents = mutableListOf<SSHEvent>()
     
+    // Performance metrics collector
+    private val metricsCollector = AndroidPerformanceMetricsCollector(logger)
+    
     override suspend fun connect(
         profile: ServerProfile,
         privateKey: PrivateKey,
@@ -142,6 +145,7 @@ class AndroidNativeSSHClient(
         localPort: Int
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            val startTime = System.currentTimeMillis()
             logger.info(TAG, "Creating port forwarding on local port $localPort")
             
             val nativeSession = session.nativeSession as? NativeSSHSession
@@ -174,6 +178,10 @@ class AndroidNativeSSHClient(
             
             logger.info(TAG, "=== SSH Process Started Successfully ===")
             logger.info(TAG, "SOCKS5 Port: $localPort")
+            
+            // Record connection establishment time
+            val connectionTime = System.currentTimeMillis() - startTime
+            metricsCollector.recordConnectionTime(connectionTime)
             
             // Update session with process
             val updatedSession = nativeSession.copy(
@@ -406,12 +414,22 @@ class AndroidNativeSSHClient(
     
     /**
      * Monitor connection health and handle disconnections.
+     * Tracks performance metrics during monitoring.
      */
     private fun monitorConnectionHealth(sessionId: String, process: Process, socksPort: Int) {
         CoroutineScope(Dispatchers.IO).launch {
             var lastState: ConnectionHealthState? = null
+            val startTime = System.currentTimeMillis()
             
             connectionMonitor.monitorConnection(process, socksPort).collect { state ->
+                // Record health check
+                val isHealthy = state is ConnectionHealthState.Healthy
+                metricsCollector.recordHealthCheck(isHealthy)
+                
+                // Update uptime
+                val uptime = System.currentTimeMillis() - startTime
+                metricsCollector.updateUptime(uptime)
+                
                 // Only log state changes to reduce noise
                 val stateChanged = lastState == null || state::class != lastState!!::class
                 if (stateChanged) {
@@ -422,6 +440,9 @@ class AndroidNativeSSHClient(
                         is ConnectionHealthState.Disconnected -> {
                             logger.warn(TAG, "Connection Status: Disconnected")
                             logger.info(TAG, "Cleaning up session resources")
+                            
+                            // Log metrics summary before cleanup
+                            metricsCollector.logMetricsSummary()
                             
                             // Clean up session
                             activeSessions[sessionId]?.let { session ->
@@ -441,6 +462,20 @@ class AndroidNativeSSHClient(
                 }
             }
         }
+    }
+    
+    /**
+     * Get current performance metrics.
+     */
+    fun getPerformanceMetrics(): PerformanceMetrics {
+        return metricsCollector.getMetrics()
+    }
+    
+    /**
+     * Reset performance metrics.
+     */
+    fun resetPerformanceMetrics() {
+        metricsCollector.reset()
     }
 }
 
