@@ -806,6 +806,12 @@ class AndroidSSHClient(
         return ssh.isConnected
     }
     
+    override fun isSessionAlive(session: SSHSession): Boolean {
+        // For sshj implementation, isSessionAlive is the same as isConnected
+        // since sshj doesn't use external processes
+        return isConnected(session)
+    }
+    
     /**
      * Maps sshj TransportException to our SSH error types.
      */

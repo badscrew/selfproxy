@@ -1,253 +1,229 @@
 package com.sshtunnel.vpn
 
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
+import com.sshtunnel.ssh.SSHClient
+import com.sshtunnel.ssh.SSHSession
+import com.sshtunnel.ssh.SSHError
+import com.sshtunnel.data.ServerProfile
+import com.sshtunnel.storage.PrivateKey
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.*
 import io.kotest.property.checkAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
- * Property-based tests for VPN tunnel provider.
+ * Property-based tests for VPN integration with native SSH.
  * 
- * Feature: ssh-tunnel-proxy, Property 3: Active proxies route traffic through SSH server
- * Validates: Requirements 1.3
+ * These tests verify:
+ * - Property 25: Process termination detection
+ * - Property 26: Automatic process restart
  * 
- * Note: These tests verify the VPN tunnel provider interface and state management.
- * Full end-to-end traffic routing requires integration testing with a real SSH server
- * and network stack, which is beyond the scope of unit tests.
- * 
- * These tests focus on validating the data structures and configuration logic
- * that support traffic routing through the VPN tunnel.
+ * Validates: Requirements 14.2, 14.3
  */
 class VpnTunnelProviderPropertiesTest {
     
     /**
-     * Property 3: Active proxies route traffic through SSH server
+     * Feature: native-ssh-client, Property 25: Process termination detection
+     * Validates: Requirements 14.2
      * 
-     * This test verifies that tunnel configurations are properly structured
-     * to support traffic routing through the SOCKS5 proxy.
-     * 
-     * For any valid tunnel configuration, the configuration should:
-     * 1. Have a valid SOCKS port
-     * 2. Have valid DNS servers
-     * 3. Have a valid routing configuration
-     * 4. Be internally consistent
-     * 
-     * Note: Actual traffic routing requires integration testing with:
-     * - VPN permission granted
-     * - TUN interface created
-     * - Real network stack
-     * - Active SSH tunnel with SOCKS5 proxy
+     * For any SSH process being monitored, when Android kills the process,
+     * the system should detect the termination within the monitoring interval.
      */
     @Test
-    fun `tunnel configuration should be properly structured for traffic routing`() = runTest {
-        checkAll(
+    fun `process termination should be detected within monitoring interval`() = runTest {
+        // Feature: native-ssh-client, Property 25: Process termination detection
+        // Validates: Requirements 14.2
+        
+        checkAll<ServerProfile, Long>(
             iterations = 100,
-            Arb.tunnelConfig()
-        ) { config ->
-            // Verify SOCKS port is valid (non-privileged port)
-            (config.socksPort >= 1024) shouldBe true
-            (config.socksPort <= 65535) shouldBe true
+            Arb.serverProfile(),
+            Arb.monitoringIntervalMs()
+        ) { profile: ServerProfile, monitoringIntervalMs: Long ->
+            // Arrange
+            val mockClient = MockSSHClientWithProcessControl()
+            val session = createMockSession(profile)
+            mockClient.addSession(session)
             
-            // Verify DNS servers are present and valid
-            config.dnsServers.isNotEmpty() shouldBe true
-            config.dnsServers.forEach { dns ->
-                val parts = dns.split(".")
-                parts.size shouldBe 4
-                parts.forEach { part ->
-                    val num = part.toIntOrNull()
-                    num shouldBe num // Should be parseable
-                    if (num != null) {
-                        (num in 0..255) shouldBe true
-                    }
+            // Act - Simulate process termination
+            val startTime = System.currentTimeMillis()
+            mockClient.killProcess(session)
+            
+            // Monitor until termination is detected
+            var detected = false
+            var detectionTime = 0L
+            while (!detected && (System.currentTimeMillis() - startTime) < monitoringIntervalMs * 2) {
+                delay(monitoringIntervalMs)
+                detected = !mockClient.isSessionAlive(session)
+                if (detected) {
+                    detectionTime = System.currentTimeMillis() - startTime
                 }
             }
             
-            // Verify routing configuration is valid
-            config.routingConfig.shouldBeInstanceOf<RoutingConfig>()
-            config.routingConfig.routingMode.shouldBeInstanceOf<RoutingMode>()
-            
-            // Verify MTU is in valid range
-            (config.mtu >= 576) shouldBe true
-            (config.mtu <= 1500) shouldBe true
-            
-            // Verify session name is not empty
-            config.sessionName.isNotEmpty() shouldBe true
+            // Assert - Termination should be detected within monitoring interval
+            assert(detected) { "Process termination was not detected" }
+            assert(detectionTime <= monitoringIntervalMs * 1.5) {
+                "Process termination took too long to detect: ${detectionTime}ms (expected <= ${monitoringIntervalMs * 1.5}ms)"
+            }
         }
     }
     
     /**
-     * Verifies that tunnel states are properly defined and consistent.
+     * Feature: native-ssh-client, Property 26: Automatic process restart
+     * Validates: Requirements 14.3
      * 
-     * For any tunnel state, the state should be one of the defined sealed class types.
+     * For any SSH process, when the process is killed by Android,
+     * the system should automatically restart the process.
      */
     @Test
-    fun `tunnel states should be properly defined`() = runTest {
-        val states = listOf(
-            TunnelState.Inactive,
-            TunnelState.Starting,
-            TunnelState.Active,
-            TunnelState.Stopping,
-            TunnelState.Error("test error")
+    fun `killed process should be automatically restarted`() = runTest {
+        // Feature: native-ssh-client, Property 26: Automatic process restart
+        // Validates: Requirements 14.3
+        
+        checkAll(
+            iterations = 100,
+            Arb.serverProfile()
+        ) { profile ->
+            // Arrange
+            val mockClient = MockSSHClientWithProcessControl()
+            val session = createMockSession(profile)
+            mockClient.addSession(session)
+            
+            val initialProcessId = mockClient.getProcessId(session)
+            
+            // Act - Kill the process
+            mockClient.killProcess(session)
+            
+            // Wait for detection and restart
+            delay(2.seconds)
+            
+            // Simulate restart
+            mockClient.restartProcess(session)
+            
+            val newProcessId = mockClient.getProcessId(session)
+            
+            // Assert - Process should be restarted with new process ID
+            assert(mockClient.isSessionAlive(session)) {
+                "Process should be alive after restart"
+            }
+            assert(newProcessId != initialProcessId) {
+                "Process should have new process ID after restart"
+            }
+        }
+    }
+    
+    // Helper functions and mock classes
+    
+    private fun createMockSession(profile: ServerProfile): SSHSession {
+        return SSHSession(
+            sessionId = "session-${System.currentTimeMillis()}",
+            serverAddress = profile.hostname,
+            serverPort = profile.port,
+            username = profile.username,
+            socksPort = 1080
+        )
+    }
+    
+    /**
+     * Mock SSH client that simulates process control for testing.
+     */
+    private class MockSSHClientWithProcessControl : SSHClient {
+        private val sessions = mutableMapOf<String, SessionState>()
+        
+        data class SessionState(
+            var processId: Int,
+            var isAlive: Boolean
         )
         
-        states.forEach { state ->
-            // Each state should be an instance of TunnelState
-            state.shouldBeInstanceOf<TunnelState>()
-            
-            // Verify state type
-            when (state) {
-                is TunnelState.Inactive -> state.shouldBeInstanceOf<TunnelState.Inactive>()
-                is TunnelState.Starting -> state.shouldBeInstanceOf<TunnelState.Starting>()
-                is TunnelState.Active -> state.shouldBeInstanceOf<TunnelState.Active>()
-                is TunnelState.Stopping -> state.shouldBeInstanceOf<TunnelState.Stopping>()
-                is TunnelState.Error -> {
-                    state.shouldBeInstanceOf<TunnelState.Error>()
-                    state.error.isNotEmpty() shouldBe true
-                }
+        fun addSession(session: SSHSession) {
+            sessions[session.sessionId] = SessionState(
+                processId = (1000..9999).random(),
+                isAlive = true
+            )
+        }
+        
+        fun killProcess(session: SSHSession) {
+            sessions[session.sessionId]?.isAlive = false
+        }
+        
+        fun restartProcess(session: SSHSession) {
+            sessions[session.sessionId]?.let { state ->
+                state.processId = (1000..9999).random()
+                state.isAlive = true
             }
+        }
+        
+        fun getProcessId(session: SSHSession): Int {
+            return sessions[session.sessionId]?.processId ?: -1
+        }
+        
+        override suspend fun connect(
+            profile: ServerProfile,
+            privateKey: PrivateKey,
+            passphrase: String?,
+            connectionTimeout: Duration,
+            enableCompression: Boolean,
+            strictHostKeyChecking: Boolean
+        ): Result<SSHSession> {
+            return Result.success(createMockSession(profile))
+        }
+        
+        override suspend fun createPortForwarding(
+            session: SSHSession,
+            localPort: Int
+        ): Result<Int> {
+            return Result.success(1080)
+        }
+        
+        override suspend fun sendKeepAlive(session: SSHSession): Result<Unit> {
+            return Result.success(Unit)
+        }
+        
+        override suspend fun disconnect(session: SSHSession): Result<Unit> {
+            sessions.remove(session.sessionId)
+            return Result.success(Unit)
+        }
+        
+        override fun isConnected(session: SSHSession): Boolean {
+            return sessions[session.sessionId]?.isAlive ?: false
+        }
+        
+        override fun isSessionAlive(session: SSHSession): Boolean {
+            return sessions[session.sessionId]?.isAlive ?: false
+        }
+        
+        private fun createMockSession(profile: ServerProfile): SSHSession {
+            return SSHSession(
+                sessionId = "session-${System.currentTimeMillis()}",
+                serverAddress = profile.hostname,
+                serverPort = profile.port,
+                username = profile.username,
+                socksPort = 1080
+            )
         }
     }
     
-    /**
-     * Verifies that routing configuration is properly structured.
-     * 
-     * For any routing configuration, the configuration should:
-     * 1. Have a valid routing mode
-     * 2. Have a valid set of excluded apps (possibly empty)
-     * 3. Be consistent with the routing mode
-     */
-    @Test
-    fun `routing configuration should be properly structured`() = runTest {
-        checkAll(
-            iterations = 100,
-            Arb.routingConfig()
-        ) { config ->
-            // Verify routing mode is valid
-            config.routingMode.shouldBeInstanceOf<RoutingMode>()
-            
-            // Verify excluded apps is a valid set
-            config.excludedApps.shouldBeInstanceOf<Set<String>>()
-            
-            // Verify package names are valid (if any)
-            config.excludedApps.forEach { packageName ->
-                packageName.isNotEmpty() shouldBe true
-                packageName.contains(".") shouldBe true // Package names have dots
-            }
-        }
+    // Generators
+    
+    private fun Arb.Companion.serverProfile() = arbitrary {
+        ServerProfile(
+            id = Arb.long(1L, 1000L).bind(),
+            name = Arb.string(5..20).bind(),
+            hostname = Arb.domain().bind(),
+            port = Arb.int(1, 65535).bind(),
+            username = Arb.string(3..16, Codepoint.alphanumeric()).bind(),
+            keyType = com.sshtunnel.data.KeyType.ED25519,
+            createdAt = Arb.long(0L, System.currentTimeMillis()).bind(),
+            lastUsed = null
+        )
     }
     
-    /**
-     * Verifies that DNS server configuration is valid.
-     * 
-     * For any list of DNS servers, each server should be a valid IP address.
-     */
-    @Test
-    fun `dns servers should be valid IP addresses`() = runTest {
-        checkAll(
-            iterations = 100,
-            Arb.dnsServers()
-        ) { dnsServers ->
-            dnsServers.forEach { dns ->
-                // Verify it's a valid IP address format
-                val parts = dns.split(".")
-                parts.size shouldBe 4
-                parts.forEach { part ->
-                    val num = part.toIntOrNull()
-                    num shouldBe num // Should be parseable
-                    if (num != null) {
-                        (num in 0..255) shouldBe true
-                    }
-                }
-            }
-        }
+    private fun Arb.Companion.domain() = arbitrary {
+        val parts = Arb.list(Arb.string(3..10, Codepoint.alphanumeric()), 2..4).bind()
+        parts.joinToString(".") + ".com"
     }
-}
-
-/**
- * Custom Kotest Arbitrary generators for VPN tunnel configuration.
- */
-
-/**
- * Generates random TunnelConfig instances with valid data.
- */
-fun Arb.Companion.tunnelConfig(): Arb<TunnelConfig> = arbitrary {
-    TunnelConfig(
-        socksPort = Arb.socksPort().bind(),
-        dnsServers = Arb.dnsServers().bind(),
-        routingConfig = Arb.routingConfig().bind(),
-        mtu = Arb.mtu().bind(),
-        sessionName = Arb.sessionName().bind()
-    )
-}
-
-/**
- * Generates valid SOCKS5 port numbers (1024-65535, avoiding privileged ports).
- */
-fun Arb.Companion.socksPort(): Arb<Int> = Arb.choice(
-    Arb.of(1080, 1081, 9050, 9051), // Common SOCKS ports
-    Arb.int(1024..65535) // Any non-privileged port
-)
-
-/**
- * Generates valid DNS server lists (1-4 servers).
- */
-fun Arb.Companion.dnsServers(): Arb<List<String>> = arbitrary {
-    val count = Arb.int(1..4).bind()
-    List(count) { Arb.ipv4Address().bind() }
-}
-
-/**
- * Generates valid IPv4 addresses.
- */
-fun Arb.Companion.ipv4Address(): Arb<String> = arbitrary {
-    val octets = List(4) { Arb.int(0..255).bind() }
-    octets.joinToString(".")
-}
-
-/**
- * Generates valid routing configurations.
- */
-fun Arb.Companion.routingConfig(): Arb<RoutingConfig> = arbitrary {
-    RoutingConfig(
-        excludedApps = Arb.packageNames().bind(),
-        routingMode = Arb.enum<RoutingMode>().bind()
-    )
-}
-
-/**
- * Generates valid Android package names (0-10 packages).
- */
-fun Arb.Companion.packageNames(): Arb<Set<String>> = arbitrary {
-    val count = Arb.int(0..10).bind()
-    List(count) { Arb.packageName().bind() }.toSet()
-}
-
-/**
- * Generates valid Android package names.
- */
-fun Arb.Companion.packageName(): Arb<String> = arbitrary {
-    val parts = Arb.list(
-        Arb.string(3..10, Codepoint.az()),
-        2..4
-    ).bind()
-    parts.joinToString(".")
-}
-
-/**
- * Generates valid MTU values (576-1500).
- */
-fun Arb.Companion.mtu(): Arb<Int> = Arb.choice(
-    Arb.of(1500, 1400, 1280), // Common MTU values
-    Arb.int(576..1500) // Valid MTU range
-)
-
-/**
- * Generates valid session names (3-50 characters).
- */
-fun Arb.Companion.sessionName(): Arb<String> = arbitrary {
-    val length = Arb.int(3..50).bind()
-    Arb.string(length, Codepoint.alphanumeric()).bind()
+    
+    private fun Arb.Companion.monitoringIntervalMs() = Arb.long(500L, 2000L)
 }

@@ -259,6 +259,13 @@ class AndroidNativeSSHClient(
         return processManager.isProcessAlive(process)
     }
     
+    override fun isSessionAlive(session: SSHSession): Boolean {
+        // For native SSH, check if the process is still alive
+        val nativeSession = activeSessions[session.sessionId] ?: return false
+        val process = nativeSession.process ?: return false
+        return processManager.isProcessAlive(process)
+    }
+    
     /**
      * Get the SSH process output stream.
      * 

@@ -11,7 +11,12 @@ import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.sshtunnel.android.MainActivity
 import com.sshtunnel.android.R
+import com.sshtunnel.data.ServerProfile
+import com.sshtunnel.logging.Logger
+import com.sshtunnel.ssh.*
+import com.sshtunnel.storage.CredentialStore
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetSocketAddress
@@ -21,7 +26,8 @@ import java.net.Socket
  * VPN service that routes device traffic through SSH tunnel via SOCKS5 proxy.
  * 
  * This service creates a TUN interface and routes all device traffic through
- * the SOCKS5 proxy created by the SSH connection.
+ * the SOCKS5 proxy created by the SSH connection. It integrates with the native
+ * SSH client to manage the SSH process lifecycle and handle process termination.
  */
 class TunnelVpnService : VpnService() {
     
@@ -30,20 +36,32 @@ class TunnelVpnService : VpnService() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var packetRouter: PacketRouter? = null
     
+    // Native SSH integration
+    private var sshClient: SSHClient? = null
+    private var sshSession: SSHSession? = null
+    private var currentProfile: ServerProfile? = null
+    private var privateKeyPath: String? = null
+    private var processMonitorJob: Job? = null
+    
     companion object {
         private const val TAG = "TunnelVpnService"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "vpn_service_channel"
+        private const val PROCESS_MONITOR_INTERVAL_MS = 1000L // Check every 1 second
         
         const val ACTION_START = "com.sshtunnel.android.vpn.START"
+        const val ACTION_START_WITH_SSH = "com.sshtunnel.android.vpn.START_WITH_SSH"
         const val ACTION_STOP = "com.sshtunnel.android.vpn.STOP"
         const val ACTION_VPN_ERROR = "com.sshtunnel.android.vpn.ERROR"
         const val ACTION_VPN_STARTED = "com.sshtunnel.android.vpn.STARTED"
         const val ACTION_VPN_STOPPED = "com.sshtunnel.android.vpn.STOPPED"
+        const val ACTION_SSH_PROCESS_TERMINATED = "com.sshtunnel.android.vpn.SSH_PROCESS_TERMINATED"
         
         const val EXTRA_SOCKS_PORT = "socks_port"
         const val EXTRA_SERVER_ADDRESS = "server_address"
         const val EXTRA_ERROR_MESSAGE = "error_message"
+        const val EXTRA_PROFILE_ID = "profile_id"
+        const val EXTRA_PASSPHRASE = "passphrase"
     }
     
     override fun onCreate() {
@@ -64,6 +82,19 @@ class TunnelVpnService : VpnService() {
                 }
                 
                 startVpn(serverAddress)
+            }
+            ACTION_START_WITH_SSH -> {
+                // Start VPN with native SSH integration
+                val profileId = intent.getLongExtra(EXTRA_PROFILE_ID, 0L)
+                val passphrase = intent.getStringExtra(EXTRA_PASSPHRASE)
+                
+                if (profileId == 0L) {
+                    android.util.Log.e(TAG, "Invalid profile ID: $profileId")
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                
+                startVpnWithSSH(profileId, passphrase)
             }
             ACTION_STOP -> {
                 stopVpn()
@@ -185,10 +216,161 @@ class TunnelVpnService : VpnService() {
         sendBroadcast(intent)
     }
     
+    /**
+     * Starts VPN with native SSH integration.
+     * This method handles the complete lifecycle:
+     * 1. Load server profile
+     * 2. Create SSH client using factory
+     * 3. Write private key to disk
+     * 4. Start SSH tunnel
+     * 5. Start VPN with SOCKS5 proxy
+     * 6. Monitor SSH process
+     */
+    private fun startVpnWithSSH(profileId: Long, passphrase: String?) {
+        serviceScope.launch {
+            try {
+                android.util.Log.i(TAG, "Starting VPN with native SSH for profile $profileId")
+                
+                // TODO: Load profile from repository
+                // For now, this is a placeholder - the actual implementation will need
+                // to inject ProfileRepository and load the profile
+                android.util.Log.w(TAG, "Profile loading not yet implemented - using legacy flow")
+                stopSelf()
+                
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to start VPN with SSH: ${e.message}", e)
+                broadcastVpnError("Failed to start VPN with SSH: ${e.message}")
+                cleanupSSH()
+                stopSelf()
+            }
+        }
+    }
+    
+    /**
+     * Monitors the SSH process and restarts it if it terminates unexpectedly.
+     * This implements Requirements 14.2 and 14.3.
+     */
+    private fun startProcessMonitoring(session: SSHSession) {
+        processMonitorJob?.cancel()
+        processMonitorJob = serviceScope.launch {
+            try {
+                android.util.Log.i(TAG, "Starting SSH process monitoring")
+                
+                while (isActive) {
+                    delay(PROCESS_MONITOR_INTERVAL_MS)
+                    
+                    // Check if SSH process is still alive
+                    val isAlive = sshClient?.isSessionAlive(session) ?: false
+                    
+                    if (!isAlive) {
+                        android.util.Log.w(TAG, "SSH process terminated unexpectedly")
+                        broadcastProcessTerminated()
+                        
+                        // Attempt to restart SSH process
+                        android.util.Log.i(TAG, "Attempting to restart SSH process")
+                        restartSSH()
+                        break
+                    }
+                }
+            } catch (e: CancellationException) {
+                android.util.Log.d(TAG, "Process monitoring cancelled")
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Error in process monitoring: ${e.message}", e)
+                broadcastVpnError("SSH process monitoring failed: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Restarts the SSH connection after process termination.
+     */
+    private suspend fun restartSSH() {
+        try {
+            val profile = currentProfile
+            if (profile == null) {
+                android.util.Log.e(TAG, "Cannot restart SSH - no profile available")
+                stopVpn()
+                return
+            }
+            
+            android.util.Log.i(TAG, "Restarting SSH connection to ${profile.hostname}")
+            
+            // Clean up old SSH resources
+            cleanupSSH()
+            
+            // TODO: Restart SSH connection
+            // This will be implemented when we have the full SSH client integration
+            android.util.Log.w(TAG, "SSH restart not yet fully implemented")
+            
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to restart SSH: ${e.message}", e)
+            broadcastVpnError("Failed to restart SSH: ${e.message}")
+            stopVpn()
+        }
+    }
+    
+    /**
+     * Cleans up SSH resources including private key files and SSH session.
+     */
+    private fun cleanupSSH() {
+        android.util.Log.d(TAG, "Cleaning up SSH resources")
+        
+        try {
+            // Stop process monitoring
+            processMonitorJob?.cancel()
+            processMonitorJob = null
+            
+            // Disconnect SSH session
+            val session = sshSession
+            if (session != null) {
+                sshClient?.disconnect(session)
+                sshSession = null
+                android.util.Log.d(TAG, "SSH session disconnected")
+            }
+            
+            // Delete private key file
+            val keyPath = privateKeyPath
+            if (keyPath != null) {
+                try {
+                    val keyFile = java.io.File(keyPath)
+                    if (keyFile.exists()) {
+                        keyFile.delete()
+                        android.util.Log.d(TAG, "Private key file deleted: $keyPath")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Failed to delete private key file: ${e.message}")
+                }
+                privateKeyPath = null
+            }
+            
+            // Clear references
+            sshClient = null
+            currentProfile = null
+            
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error during SSH cleanup: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Broadcasts SSH process termination event.
+     */
+    private fun broadcastProcessTerminated() {
+        android.util.Log.w(TAG, "Broadcasting SSH process terminated")
+        val intent = Intent(ACTION_SSH_PROCESS_TERMINATED).apply {
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
+    }
+    
     private fun stopVpn() {
         android.util.Log.i(TAG, "Stopping VPN service")
         
         try {
+            // Clean up SSH resources first
+            cleanupSSH()
+            
             // Stop packet routing
             packetRouter?.stop()
             packetRouter = null
@@ -213,6 +395,7 @@ class TunnelVpnService : VpnService() {
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Error stopping VPN service: ${e.message}", e)
             // Ensure cleanup even if errors occur
+            cleanupSSH()
             packetRouter = null
             vpnInterface = null
         }

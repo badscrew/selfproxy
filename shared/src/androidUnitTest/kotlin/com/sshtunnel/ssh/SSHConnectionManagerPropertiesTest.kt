@@ -307,6 +307,10 @@ class SSHConnectionManagerPropertiesTest {
         override fun isConnected(session: SSHSession): Boolean {
             return connectedSessions.contains(session.sessionId)
         }
+        
+        override fun isSessionAlive(session: SSHSession): Boolean {
+            return isConnected(session)
+        }
     }
     
     /**

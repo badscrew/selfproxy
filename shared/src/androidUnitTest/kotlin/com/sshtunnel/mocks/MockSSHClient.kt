@@ -152,6 +152,10 @@ class MockSSHClient : SSHClient {
         return activeSessions[session.sessionId]?.isConnected ?: false
     }
     
+    override fun isSessionAlive(session: SSHSession): Boolean {
+        return isConnected(session)
+    }
+    
     /**
      * Resets the mock to default state (useful for test cleanup).
      */

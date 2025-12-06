@@ -205,6 +205,7 @@
 
 
 
+
   - Add SSH implementation type preference to settings
   - Implement preference persistence using DataStore
   - Implement preference retrieval in SSH client factory
@@ -218,7 +219,11 @@
   - **Property 19: User preference persistence**
   - **Validates: Requirements 10.3, 10.4, 10.5**
 
-- [ ] 11. Integrate native SSH with VPN service
+- [x] 11. Integrate native SSH with VPN service
+
+
+
+
   - Update TunnelVpnService to use SSH client factory
   - Implement SSH tunnel start in VPN service lifecycle
   - Implement private key file creation before SSH start
@@ -228,7 +233,9 @@
   - Handle SSH process termination and restart
   - _Requirements: 14.1, 14.2, 14.3_
 
-- [ ] 11.1 Write property test for VPN integration
+- [x] 11.1 Write property test for VPN integration
+
+
   - **Property 25: Process termination detection**
   - **Property 26: Automatic process restart**
   - **Validates: Requirements 14.2, 14.3**

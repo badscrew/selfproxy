@@ -66,6 +66,16 @@ interface SSHClient {
      * @return true if the session is connected, false otherwise
      */
     fun isConnected(session: SSHSession): Boolean
+    
+    /**
+     * Checks if the SSH session's underlying process is still alive.
+     * This is particularly important for native SSH implementations where
+     * the SSH process can be killed by the system.
+     * 
+     * @param session The SSH session to check
+     * @return true if the session process is alive, false otherwise
+     */
+    fun isSessionAlive(session: SSHSession): Boolean
 }
 
 /**
