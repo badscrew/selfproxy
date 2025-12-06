@@ -106,6 +106,7 @@
 
 
 
+
   - Create ShadowsocksClient interface in shared module
   - Implement AndroidShadowsocksClient using shadowsocks library
   - Implement start() method to launch local SOCKS5 proxy
@@ -129,7 +130,11 @@
   - Test error handling for invalid configurations
   - _Requirements: 3.1, 3.2, 3.5_
 
-- [ ] 8. Implement PacketRouter for TUN to SOCKS5 routing
+- [x] 8. Implement PacketRouter for TUN to SOCKS5 routing
+
+
+
+
   - Create PacketRouter class for packet handling
   - Implement packet reading from TUN interface
   - Implement packet parsing (IP, TCP, UDP headers)
@@ -139,7 +144,8 @@
   - Add statistics tracking (bytes sent/received, speeds)
   - _Requirements: 4.1, 4.2, 4.4, 7.2, 7.3_
 
-- [ ] 8.1 Write unit tests for packet parsing
+- [x] 8.1 Write unit tests for packet parsing
+
   - Test IP packet parsing
   - Test TCP header extraction
   - Test UDP header extraction
