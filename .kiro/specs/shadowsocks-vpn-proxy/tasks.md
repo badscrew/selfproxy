@@ -86,6 +86,7 @@
 
 
 
+
   - Create CredentialStore interface
   - Implement Android Keystore encryption for passwords
   - Implement storePassword with hardware-backed encryption
@@ -100,7 +101,11 @@
   - **Property 2: Password encryption round-trip preserves data**
   - **Validates: Requirements 2.1, 2.2**
 
-- [ ] 7. Implement ShadowsocksClient interface and Android implementation
+- [x] 7. Implement ShadowsocksClient interface and Android implementation
+
+
+
+
   - Create ShadowsocksClient interface in shared module
   - Implement AndroidShadowsocksClient using shadowsocks library
   - Implement start() method to launch local SOCKS5 proxy
@@ -110,11 +115,15 @@
   - Add support for all required ciphers (aes-256-gcm, chacha20-ietf-poly1305, aes-128-gcm)
   - _Requirements: 3.1, 3.2, 8.1, 8.2, 9.1, 9.2, 9.3, 9.4_
 
-- [ ] 7.1 Write property test for cipher validation
+- [x] 7.1 Write property test for cipher validation
+
+
   - **Property 8: Cipher method validation rejects unsupported ciphers**
   - **Validates: Requirements 9.1, 9.2, 9.3, 9.5**
 
-- [ ] 7.2 Write unit tests for ShadowsocksClient
+- [x] 7.2 Write unit tests for ShadowsocksClient
+
+
   - Test start/stop lifecycle
   - Test connection state transitions
   - Test error handling for invalid configurations
