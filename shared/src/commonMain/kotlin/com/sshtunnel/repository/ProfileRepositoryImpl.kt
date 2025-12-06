@@ -57,15 +57,19 @@ class ProfileRepositoryImpl(
                 .mapToOneOrNull(Dispatchers.Default)
                 .first()
                 ?.let { dbProfile ->
+                    @Suppress("DEPRECATION")
                     ServerProfile(
                         id = dbProfile.id,
                         name = dbProfile.name,
+                        serverHost = dbProfile.hostname,
+                        serverPort = dbProfile.port.toInt(),
+                        cipher = com.sshtunnel.data.CipherMethod.AES_256_GCM, // Default cipher for migration
+                        createdAt = dbProfile.createdAt,
+                        lastUsed = dbProfile.lastUsed,
                         hostname = dbProfile.hostname,
                         port = dbProfile.port.toInt(),
                         username = dbProfile.username,
-                        keyType = KeyType.valueOf(dbProfile.keyType),
-                        createdAt = dbProfile.createdAt,
-                        lastUsed = dbProfile.lastUsed
+                        keyType = KeyType.valueOf(dbProfile.keyType)
                     )
                 }
         } catch (e: Exception) {
@@ -80,15 +84,19 @@ class ProfileRepositoryImpl(
                 .mapToList(Dispatchers.Default)
                 .first()
                 .map { dbProfile ->
+                    @Suppress("DEPRECATION")
                     ServerProfile(
                         id = dbProfile.id,
                         name = dbProfile.name,
+                        serverHost = dbProfile.hostname,
+                        serverPort = dbProfile.port.toInt(),
+                        cipher = com.sshtunnel.data.CipherMethod.AES_256_GCM, // Default cipher for migration
+                        createdAt = dbProfile.createdAt,
+                        lastUsed = dbProfile.lastUsed,
                         hostname = dbProfile.hostname,
                         port = dbProfile.port.toInt(),
                         username = dbProfile.username,
-                        keyType = KeyType.valueOf(dbProfile.keyType),
-                        createdAt = dbProfile.createdAt,
-                        lastUsed = dbProfile.lastUsed
+                        keyType = KeyType.valueOf(dbProfile.keyType)
                     )
                 }
         } catch (e: Exception) {

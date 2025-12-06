@@ -14,13 +14,15 @@ import kotlin.test.Test
 /**
  * Property-based tests for ServerProfile data model.
  * 
- * Feature: ssh-tunnel-proxy, Property 6: Profile creation round-trip
- * Validates: Requirements 2.1
+ * Feature: shadowsocks-vpn-proxy, Property 1: Profile CRUD operations maintain data integrity
+ * Validates: Requirements 1.1, 1.2, 1.3
  */
 class ServerProfilePropertiesTest {
     
     @Test
     fun `profile serialization round-trip should preserve data`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 1: Profile CRUD operations maintain data integrity
+        // Validates: Requirements 1.1, 1.2, 1.3
         checkAll(
             iterations = 100,
             Arb.serverProfile()
@@ -31,13 +33,12 @@ class ServerProfilePropertiesTest {
             // Deserialize back
             val deserialized = Json.decodeFromString<ServerProfile>(json)
             
-            // Verify all fields are preserved
+            // Verify all Shadowsocks fields are preserved
             deserialized.id shouldBe profile.id
             deserialized.name shouldBe profile.name
-            deserialized.hostname shouldBe profile.hostname
-            deserialized.port shouldBe profile.port
-            deserialized.username shouldBe profile.username
-            deserialized.keyType shouldBe profile.keyType
+            deserialized.serverHost shouldBe profile.serverHost
+            deserialized.serverPort shouldBe profile.serverPort
+            deserialized.cipher shouldBe profile.cipher
             deserialized.createdAt shouldBe profile.createdAt
             deserialized.lastUsed shouldBe profile.lastUsed
         }
@@ -56,10 +57,9 @@ class ServerProfilePropertiesTest {
             copied shouldBe profile
             copied.id shouldBe profile.id
             copied.name shouldBe profile.name
-            copied.hostname shouldBe profile.hostname
-            copied.port shouldBe profile.port
-            copied.username shouldBe profile.username
-            copied.keyType shouldBe profile.keyType
+            copied.serverHost shouldBe profile.serverHost
+            copied.serverPort shouldBe profile.serverPort
+            copied.cipher shouldBe profile.cipher
             copied.createdAt shouldBe profile.createdAt
             copied.lastUsed shouldBe profile.lastUsed
         }
@@ -75,10 +75,9 @@ class ServerProfilePropertiesTest {
             // If any field differs, profiles should not be equal
             if (profile1.id != profile2.id ||
                 profile1.name != profile2.name ||
-                profile1.hostname != profile2.hostname ||
-                profile1.port != profile2.port ||
-                profile1.username != profile2.username ||
-                profile1.keyType != profile2.keyType ||
+                profile1.serverHost != profile2.serverHost ||
+                profile1.serverPort != profile2.serverPort ||
+                profile1.cipher != profile2.cipher ||
                 profile1.createdAt != profile2.createdAt ||
                 profile1.lastUsed != profile2.lastUsed) {
                 profile1 shouldNotBe profile2
@@ -92,16 +91,16 @@ class ServerProfilePropertiesTest {
  */
 
 /**
- * Generates random ServerProfile instances with valid data.
+ * Generates random ServerProfile instances with valid Shadowsocks data.
  */
 fun Arb.Companion.serverProfile(): Arb<ServerProfile> = arbitrary {
+    @Suppress("DEPRECATION")
     ServerProfile(
         id = Arb.long(0..Long.MAX_VALUE).bind(),
         name = Arb.profileName().bind(),
-        hostname = Arb.hostname().bind(),
-        port = Arb.sshPort().bind(),
-        username = Arb.username().bind(),
-        keyType = Arb.enum<KeyType>().bind(),
+        serverHost = Arb.hostname().bind(),
+        serverPort = Arb.shadowsocksPort().bind(),
+        cipher = Arb.enum<CipherMethod>().bind(),
         createdAt = Arb.timestamp().bind(),
         lastUsed = Arb.timestamp().orNull(0.3).bind() // 30% chance of null
     )
@@ -144,20 +143,12 @@ fun Arb.Companion.ipAddress(): Arb<String> = arbitrary {
 }
 
 /**
- * Generates valid SSH port numbers (1-65535, with common ports weighted higher).
+ * Generates valid Shadowsocks port numbers (1024-65535, with common ports weighted higher).
  */
-fun Arb.Companion.sshPort(): Arb<Int> = Arb.choice(
-    Arb.of(22, 2222, 22000), // Common SSH ports (higher weight)
-    Arb.int(1..65535) // Any valid port
+fun Arb.Companion.shadowsocksPort(): Arb<Int> = Arb.choice(
+    Arb.of(8388, 8389, 443, 8080), // Common Shadowsocks ports (higher weight)
+    Arb.int(1024..65535) // Any valid non-privileged port
 )
-
-/**
- * Generates valid usernames (3-32 characters, alphanumeric).
- */
-fun Arb.Companion.username(): Arb<String> = arbitrary {
-    val length = Arb.int(3..32).bind()
-    Arb.string(length, Codepoint.alphanumeric()).bind()
-}
 
 /**
  * Generates valid timestamps (milliseconds since epoch).
