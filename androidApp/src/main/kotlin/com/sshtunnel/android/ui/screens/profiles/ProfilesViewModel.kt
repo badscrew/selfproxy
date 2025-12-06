@@ -2,7 +2,7 @@ package com.sshtunnel.android.ui.screens.profiles
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.sshtunnel.data.KeyType
+import com.sshtunnel.data.CipherMethod
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.repository.ProfileRepository
 import com.sshtunnel.storage.CredentialStore
@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for managing SSH server profiles.
+ * ViewModel for managing Shadowsocks server profiles.
  * 
  * Handles profile CRUD operations and maintains UI state for the profiles screen.
  */
@@ -81,34 +81,31 @@ class ProfilesViewModel @Inject constructor(
      * Creates a new profile with the provided details.
      * 
      * @param name Profile name
-     * @param hostname SSH server hostname
-     * @param port SSH server port
-     * @param username SSH username
-     * @param keyType SSH key type
-     * @param keyData SSH private key bytes
+     * @param serverHost Shadowsocks server hostname or IP
+     * @param serverPort Shadowsocks server port
+     * @param password Shadowsocks server password
+     * @param cipher Encryption cipher method
      */
     fun createProfile(
         name: String,
-        hostname: String,
-        port: Int,
-        username: String,
-        keyType: KeyType,
-        keyData: ByteArray
+        serverHost: String,
+        serverPort: Int,
+        password: String,
+        cipher: CipherMethod
     ) {
         viewModelScope.launch {
             try {
                 val profile = ServerProfile(
                     name = name,
-                    hostname = hostname,
-                    port = port,
-                    username = username,
-                    keyType = keyType
+                    serverHost = serverHost,
+                    serverPort = serverPort,
+                    cipher = cipher
                 )
                 
                 val result = profileRepository.createProfile(profile)
                 result.onSuccess { profileId ->
-                    // Store the SSH key
-                    credentialStore.storeKey(profileId, keyData)
+                    // Store the password
+                    credentialStore.storePassword(profileId, password)
                     hideProfileDialog()
                     loadProfiles()
                 }.onFailure { error ->
@@ -128,16 +125,16 @@ class ProfilesViewModel @Inject constructor(
      * Updates an existing profile with new details.
      * 
      * @param profile Updated profile
-     * @param keyData Optional new SSH private key bytes
+     * @param password Optional new password (if empty, keeps existing password)
      */
-    fun updateProfile(profile: ServerProfile, keyData: ByteArray? = null) {
+    fun updateProfile(profile: ServerProfile, password: String = "") {
         viewModelScope.launch {
             try {
                 val result = profileRepository.updateProfile(profile)
                 result.onSuccess {
-                    // Update the SSH key if provided
-                    keyData?.let {
-                        credentialStore.storeKey(profile.id, it)
+                    // Update the password if provided
+                    if (password.isNotEmpty()) {
+                        credentialStore.storePassword(profile.id, password)
                     }
                     hideProfileDialog()
                     loadProfiles()
@@ -171,15 +168,15 @@ class ProfilesViewModel @Inject constructor(
     }
     
     /**
-     * Deletes a profile and its associated SSH key.
+     * Deletes a profile and its associated password.
      * 
      * @param profile Profile to delete
      */
     fun deleteProfile(profile: ServerProfile) {
         viewModelScope.launch {
             try {
-                // Delete the SSH key first
-                credentialStore.deleteKey(profile.id)
+                // Delete the password first
+                credentialStore.deletePassword(profile.id)
                 
                 // Then delete the profile
                 val result = profileRepository.deleteProfile(profile.id)

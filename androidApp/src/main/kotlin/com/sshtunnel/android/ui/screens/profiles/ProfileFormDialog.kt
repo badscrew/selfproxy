@@ -1,25 +1,21 @@
 package com.sshtunnel.android.ui.screens.profiles
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.sshtunnel.data.KeyType
+import com.sshtunnel.data.CipherMethod
 import com.sshtunnel.data.ServerProfile
-import java.io.InputStream
 
 /**
- * Dialog for creating or editing SSH server profiles.
+ * Dialog for creating or editing Shadowsocks server profiles.
  * 
  * @param profile Optional profile to edit, null for creating new profile
  * @param onDismiss Callback when dialog is dismissed
@@ -30,41 +26,22 @@ import java.io.InputStream
 fun ProfileFormDialog(
     profile: ServerProfile?,
     onDismiss: () -> Unit,
-    onSave: (name: String, hostname: String, port: Int, username: String, keyType: KeyType, keyData: ByteArray?) -> Unit
+    onSave: (name: String, serverHost: String, serverPort: Int, password: String, cipher: CipherMethod) -> Unit
 ) {
-    val context = LocalContext.current
     val isEditing = profile != null
     
     var name by remember { mutableStateOf(profile?.name ?: "") }
-    var hostname by remember { mutableStateOf(profile?.hostname ?: "") }
-    var port by remember { mutableStateOf(profile?.port?.toString() ?: "22") }
-    var username by remember { mutableStateOf(profile?.username ?: "") }
-    var keyType by remember { mutableStateOf(profile?.keyType ?: KeyType.ED25519) }
-    var keyFileName by remember { mutableStateOf<String?>(null) }
-    var keyData by remember { mutableStateOf<ByteArray?>(null) }
-    var showKeyTypeMenu by remember { mutableStateOf(false) }
+    var serverHost by remember { mutableStateOf(profile?.serverHost ?: "") }
+    var serverPort by remember { mutableStateOf(profile?.serverPort?.toString() ?: "8388") }
+    var password by remember { mutableStateOf("") }
+    var cipher by remember { mutableStateOf(profile?.cipher ?: CipherMethod.AES_256_GCM) }
+    var showCipherMenu by remember { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
     
     var nameError by remember { mutableStateOf<String?>(null) }
-    var hostnameError by remember { mutableStateOf<String?>(null) }
-    var portError by remember { mutableStateOf<String?>(null) }
-    var usernameError by remember { mutableStateOf<String?>(null) }
-    var keyError by remember { mutableStateOf<String?>(null) }
-    
-    // File picker for SSH key
-    val keyFilePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            try {
-                val inputStream: InputStream? = context.contentResolver.openInputStream(it)
-                keyData = inputStream?.readBytes()
-                keyFileName = it.lastPathSegment ?: "key_file"
-                keyError = null
-            } catch (e: Exception) {
-                keyError = "Failed to read key file: ${e.message}"
-            }
-        }
-    }
+    var serverHostError by remember { mutableStateOf<String?>(null) }
+    var serverPortError by remember { mutableStateOf<String?>(null) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
     
     fun validate(): Boolean {
         var isValid = true
@@ -76,33 +53,26 @@ fun ProfileFormDialog(
             nameError = null
         }
         
-        if (hostname.isBlank()) {
-            hostnameError = "Hostname is required"
+        if (serverHost.isBlank()) {
+            serverHostError = "Server host is required"
             isValid = false
         } else {
-            hostnameError = null
+            serverHostError = null
         }
         
-        val portInt = port.toIntOrNull()
-        if (portInt == null || portInt !in 1..65535) {
-            portError = "Port must be between 1 and 65535"
+        val portInt = serverPort.toIntOrNull()
+        if (portInt == null || portInt !in 1024..65535) {
+            serverPortError = "Port must be between 1024 and 65535"
             isValid = false
         } else {
-            portError = null
+            serverPortError = null
         }
         
-        if (username.isBlank()) {
-            usernameError = "Username is required"
+        if (!isEditing && password.isBlank()) {
+            passwordError = "Password is required"
             isValid = false
         } else {
-            usernameError = null
-        }
-        
-        if (!isEditing && keyData == null) {
-            keyError = "SSH key file is required"
-            isValid = false
-        } else {
-            keyError = null
+            passwordError = null
         }
         
         return isValid
@@ -118,7 +88,7 @@ fun ProfileFormDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 280.dp) // Reduced height to ensure scrolling works with keyboard
+                    .heightIn(max = 400.dp)
                     .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -130,107 +100,139 @@ fun ProfileFormDialog(
                         nameError = null
                     },
                     label = { Text("Profile Name") },
-                    placeholder = { Text("My Server") },
+                    placeholder = { Text("My Shadowsocks Server") },
                     isError = nameError != null,
                     supportingText = nameError?.let { { Text(it) } },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 
-                // Hostname field
+                // Server host field
                 OutlinedTextField(
-                    value = hostname,
+                    value = serverHost,
                     onValueChange = {
-                        hostname = it
-                        hostnameError = null
+                        serverHost = it
+                        serverHostError = null
                     },
-                    label = { Text("Hostname") },
-                    placeholder = { Text("example.com") },
-                    isError = hostnameError != null,
-                    supportingText = hostnameError?.let { { Text(it) } },
+                    label = { Text("Server Host") },
+                    placeholder = { Text("example.com or 192.168.1.1") },
+                    isError = serverHostError != null,
+                    supportingText = serverHostError?.let { { Text(it) } },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 
-                // Port field
+                // Server port field
                 OutlinedTextField(
-                    value = port,
+                    value = serverPort,
                     onValueChange = {
-                        port = it
-                        portError = null
+                        serverPort = it
+                        serverPortError = null
                     },
-                    label = { Text("Port") },
-                    placeholder = { Text("22") },
-                    isError = portError != null,
-                    supportingText = portError?.let { { Text(it) } },
+                    label = { Text("Server Port") },
+                    placeholder = { Text("8388") },
+                    isError = serverPortError != null,
+                    supportingText = serverPortError?.let { { Text(it) } },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 
-                // Username field
+                // Password field with visibility toggle
                 OutlinedTextField(
-                    value = username,
+                    value = password,
                     onValueChange = {
-                        username = it
-                        usernameError = null
+                        password = it
+                        passwordError = null
                     },
-                    label = { Text("Username") },
-                    placeholder = { Text("user") },
-                    isError = usernameError != null,
-                    supportingText = usernameError?.let { { Text(it) } },
+                    label = { Text(if (isEditing) "Password (leave blank to keep current)" else "Password") },
+                    placeholder = { Text("Enter server password") },
+                    isError = passwordError != null,
+                    supportingText = passwordError?.let { { Text(it) } },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Text(if (passwordVisible) "Hide" else "Show")
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
                 
-                // Key type dropdown
+                // Cipher selection dropdown
                 ExposedDropdownMenuBox(
-                    expanded = showKeyTypeMenu,
-                    onExpandedChange = { showKeyTypeMenu = it }
+                    expanded = showCipherMenu,
+                    onExpandedChange = { showCipherMenu = it }
                 ) {
                     OutlinedTextField(
-                        value = keyType.name,
+                        value = when (cipher) {
+                            CipherMethod.AES_256_GCM -> "AES-256-GCM"
+                            CipherMethod.CHACHA20_IETF_POLY1305 -> "ChaCha20-IETF-Poly1305"
+                            CipherMethod.AES_128_GCM -> "AES-128-GCM"
+                        },
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Key Type") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showKeyTypeMenu) },
+                        label = { Text("Encryption Cipher") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showCipherMenu) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor()
                     )
                     
                     ExposedDropdownMenu(
-                        expanded = showKeyTypeMenu,
-                        onDismissRequest = { showKeyTypeMenu = false }
+                        expanded = showCipherMenu,
+                        onDismissRequest = { showCipherMenu = false }
                     ) {
-                        KeyType.values().forEach { type ->
-                            DropdownMenuItem(
-                                text = { Text(type.name) },
-                                onClick = {
-                                    keyType = type
-                                    showKeyTypeMenu = false
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text("AES-256-GCM")
+                                    Text(
+                                        "Strong security, good performance",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            )
-                        }
+                            },
+                            onClick = {
+                                cipher = CipherMethod.AES_256_GCM
+                                showCipherMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text("ChaCha20-IETF-Poly1305")
+                                    Text(
+                                        "Best for mobile devices",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                cipher = CipherMethod.CHACHA20_IETF_POLY1305
+                                showCipherMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text("AES-128-GCM")
+                                    Text(
+                                        "Faster, still secure",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                cipher = CipherMethod.AES_128_GCM
+                                showCipherMenu = false
+                            }
+                        )
                     }
-                }
-                
-                // SSH key file picker
-                OutlinedButton(
-                    onClick = { keyFilePicker.launch("*/*") },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = keyFileName ?: if (isEditing) "Change SSH Key (optional)" else "Select SSH Key File"
-                    )
-                }
-                
-                if (keyError != null) {
-                    Text(
-                        text = keyError!!,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
                 }
             }
         },
@@ -240,11 +242,10 @@ fun ProfileFormDialog(
                     if (validate()) {
                         onSave(
                             name,
-                            hostname,
-                            port.toInt(),
-                            username,
-                            keyType,
-                            keyData
+                            serverHost,
+                            serverPort.toInt(),
+                            password,
+                            cipher
                         )
                     }
                 }

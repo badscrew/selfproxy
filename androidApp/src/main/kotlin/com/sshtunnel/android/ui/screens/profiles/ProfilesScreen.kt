@@ -40,7 +40,7 @@ fun ProfilesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SSH Profiles") },
+                title = { Text("Shadowsocks Profiles") },
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
@@ -125,22 +125,19 @@ fun ProfilesScreen(
         ProfileFormDialog(
             profile = editingProfile,
             onDismiss = { viewModel.hideProfileDialog() },
-            onSave = { name, hostname, port, username, keyType, keyData ->
+            onSave = { name, serverHost, serverPort, password, cipher ->
                 if (editingProfile != null) {
                     viewModel.updateProfile(
                         editingProfile!!.copy(
                             name = name,
-                            hostname = hostname,
-                            port = port,
-                            username = username,
-                            keyType = keyType
+                            serverHost = serverHost,
+                            serverPort = serverPort,
+                            cipher = cipher
                         ),
-                        keyData
+                        password
                     )
                 } else {
-                    if (keyData != null) {
-                        viewModel.createProfile(name, hostname, port, username, keyType, keyData)
-                    }
+                    viewModel.createProfile(name, serverHost, serverPort, password, cipher)
                 }
             }
         )
@@ -265,23 +262,27 @@ private fun ProfileCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "${profile.username}@${profile.hostname}:${profile.port}",
+                    text = "${profile.serverHost}:${profile.serverPort}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
             
-            // Key type
+            // Cipher
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "Key Type:",
+                    text = "Cipher:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = profile.keyType.name,
+                    text = when (profile.cipher) {
+                        com.sshtunnel.data.CipherMethod.AES_256_GCM -> "AES-256-GCM"
+                        com.sshtunnel.data.CipherMethod.CHACHA20_IETF_POLY1305 -> "ChaCha20-IETF-Poly1305"
+                        com.sshtunnel.data.CipherMethod.AES_128_GCM -> "AES-128-GCM"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )

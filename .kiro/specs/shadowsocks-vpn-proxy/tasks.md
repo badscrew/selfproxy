@@ -260,6 +260,7 @@
 
 
 
+
   - Add statistics collection in PacketRouter
   - Implement byte counters (sent/received)
   - Implement speed calculation (upload/download)
@@ -273,7 +274,10 @@
   - **Property 6: Statistics accumulation is monotonic**
   - **Validates: Requirements 7.2, 7.3**
 
-- [ ] 14. Update UI for Shadowsocks profiles
+- [x] 14. Update UI for Shadowsocks profiles
+
+
+
   - Update ProfileFormDialog for Shadowsocks fields (host, port, password, cipher)
   - Remove SSH-specific UI fields (username, key type, key file)
   - Add cipher selection dropdown
