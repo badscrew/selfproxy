@@ -2,11 +2,16 @@ package com.sshtunnel.android.vpn
 
 import com.sshtunnel.android.vpn.packet.IPPacketParser
 import com.sshtunnel.android.vpn.packet.Protocol
+import com.sshtunnel.data.VpnStatistics
 import com.sshtunnel.logging.Logger
 import com.sshtunnel.logging.LoggerImpl
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Routes IP packets from TUN interface through SOCKS5 proxy.
@@ -17,8 +22,9 @@ import java.io.FileOutputStream
  * - Dispatching UDP packets to UDPHandler
  * - Managing connections through ConnectionTable
  * - Writing responses back to TUN
+ * - Tracking real-time statistics (bytes, speed, duration)
  * 
- * Requirements: 1.1, 1.2, 1.3, 1.5
+ * Requirements: 1.1, 1.2, 1.3, 1.5, 7.2, 7.3, 7.4, 7.5
  */
 class PacketRouter(
     private val tunInputStream: FileInputStream,
@@ -36,19 +42,37 @@ class PacketRouter(
         private const val MAX_PACKET_SIZE = 32767
         private const val CLEANUP_INTERVAL_MS = 30_000L // 30 seconds
         private const val IDLE_TIMEOUT_MS = 120_000L // 2 minutes
+        private const val STATS_UPDATE_INTERVAL_MS = 1_000L // 1 second
+        private const val SPEED_CALCULATION_WINDOW_MS = 1_000L // 1 second window for speed calculation
     }
     
     private var cleanupJob: Job? = null
+    private var statsUpdateJob: Job? = null
+    
+    // Statistics tracking
+    private val _statistics = MutableStateFlow(VpnStatistics())
+    private var connectionStartTime: Long = 0
+    private var lastStatsUpdate: Long = 0
+    private var lastBytesSent: Long = 0
+    private var lastBytesReceived: Long = 0
     
     /**
      * Starts the packet router.
      * 
-     * Begins reading packets from TUN interface and starts periodic connection cleanup.
+     * Begins reading packets from TUN interface and starts periodic connection cleanup
+     * and statistics updates.
      * 
-     * Requirements: 1.1
+     * Requirements: 1.1, 7.2, 7.3, 7.4, 7.5
      */
     fun start() {
         logger.info(TAG, "Starting packet router with SOCKS port $socksPort")
+        
+        // Initialize statistics tracking
+        connectionStartTime = System.currentTimeMillis()
+        lastStatsUpdate = connectionStartTime
+        lastBytesSent = 0
+        lastBytesReceived = 0
+        _statistics.value = VpnStatistics()
         
         // Start packet routing
         scope.launch {
@@ -64,6 +88,18 @@ class PacketRouter(
                     logger.verbose(TAG, "Connection cleanup completed")
                 } catch (e: Exception) {
                     logger.error(TAG, "Error during connection cleanup: ${e.message}", e)
+                }
+            }
+        }
+        
+        // Start periodic statistics updates
+        statsUpdateJob = scope.launch {
+            while (isActive) {
+                delay(STATS_UPDATE_INTERVAL_MS)
+                try {
+                    updateStatistics()
+                } catch (e: Exception) {
+                    logger.error(TAG, "Error updating statistics: ${e.message}", e)
                 }
             }
         }
@@ -84,6 +120,10 @@ class PacketRouter(
         // Cancel cleanup job
         cleanupJob?.cancel()
         cleanupJob = null
+        
+        // Cancel statistics update job
+        statsUpdateJob?.cancel()
+        statsUpdateJob = null
         
         // Close all connections
         scope.launch {
@@ -109,6 +149,75 @@ class PacketRouter(
      */
     fun getStatistics(): RouterStatistics {
         return connectionTable.getStatistics()
+    }
+    
+    /**
+     * Observes real-time VPN statistics.
+     * 
+     * Emits statistics updates including:
+     * - Bytes sent/received (monotonically increasing)
+     * - Upload/download speeds (calculated over 1-second window)
+     * - Connection duration (time since start)
+     * 
+     * @return StateFlow emitting statistics updates every second
+     * Requirements: 7.2, 7.3, 7.4, 7.5
+     */
+    fun observeStatistics(): StateFlow<VpnStatistics> = _statistics.asStateFlow()
+    
+    /**
+     * Updates statistics from connection table.
+     * 
+     * Calculates:
+     * - Total bytes sent/received from all connections
+     * - Upload/download speeds based on bytes transferred in last second
+     * - Connection duration since router started
+     * 
+     * Requirements: 7.2, 7.3, 7.4, 7.5
+     */
+    private fun updateStatistics() {
+        val now = System.currentTimeMillis()
+        val connectionStats = connectionTable.getStatistics()
+        
+        // Get current byte counts
+        val currentBytesSent = connectionStats.totalBytesSent
+        val currentBytesReceived = connectionStats.totalBytesReceived
+        
+        // Calculate speeds (bytes per second)
+        val timeDeltaMs = now - lastStatsUpdate
+        val uploadSpeed = if (timeDeltaMs > 0) {
+            ((currentBytesSent - lastBytesSent) * 1000 / timeDeltaMs)
+        } else {
+            0L
+        }
+        val downloadSpeed = if (timeDeltaMs > 0) {
+            ((currentBytesReceived - lastBytesReceived) * 1000 / timeDeltaMs)
+        } else {
+            0L
+        }
+        
+        // Calculate connection duration
+        val durationMs = now - connectionStartTime
+        val duration = durationMs.milliseconds
+        
+        // Update statistics
+        _statistics.value = VpnStatistics(
+            bytesSent = currentBytesSent,
+            bytesReceived = currentBytesReceived,
+            uploadSpeed = uploadSpeed.coerceAtLeast(0), // Ensure non-negative
+            downloadSpeed = downloadSpeed.coerceAtLeast(0), // Ensure non-negative
+            connectedDuration = duration
+        )
+        
+        // Update last values for next calculation
+        lastStatsUpdate = now
+        lastBytesSent = currentBytesSent
+        lastBytesReceived = currentBytesReceived
+        
+        logger.verbose(
+            TAG,
+            "Statistics updated: sent=${currentBytesSent} bytes, received=${currentBytesReceived} bytes, " +
+            "upload=${uploadSpeed} B/s, download=${downloadSpeed} B/s, duration=${duration}"
+        )
     }
     
     /**

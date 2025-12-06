@@ -232,6 +232,7 @@
 
 
 
+
   - Add reconnection state to ConnectionManager
   - Implement exponential backoff algorithm (1s, 2s, 4s, 8s, 16s, 32s, 60s max)
   - Implement network change detection
@@ -254,7 +255,11 @@
   - Test max retry behavior
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 13. Implement statistics tracking
+- [x] 13. Implement statistics tracking
+
+
+
+
   - Add statistics collection in PacketRouter
   - Implement byte counters (sent/received)
   - Implement speed calculation (upload/download)
@@ -262,7 +267,9 @@
   - Add real-time statistics updates via Flow
   - _Requirements: 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 13.1 Write property test for statistics monotonicity
+- [x] 13.1 Write property test for statistics monotonicity
+
+
   - **Property 6: Statistics accumulation is monotonic**
   - **Validates: Requirements 7.2, 7.3**
 
