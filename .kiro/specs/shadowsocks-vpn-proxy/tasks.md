@@ -278,6 +278,7 @@
 
 
 
+
   - Update ProfileFormDialog for Shadowsocks fields (host, port, password, cipher)
   - Remove SSH-specific UI fields (username, key type, key file)
   - Add cipher selection dropdown
@@ -286,7 +287,11 @@
   - Update ProfilesScreen to display Shadowsocks info
   - _Requirements: 1.1, 1.2, 1.5, 9.1, 9.2, 9.3_
 
-- [ ] 15. Update ConnectionScreen for Shadowsocks
+- [x] 15. Update ConnectionScreen for Shadowsocks
+
+
+
+
   - Update connection status display
   - Update statistics display (bytes, speed, duration)
   - Add real-time statistics updates
@@ -294,7 +299,11 @@
   - Remove SSH-specific status information
   - _Requirements: 3.4, 3.5, 7.1, 7.2, 7.3, 7.4, 7.5_
 
-- [ ] 16. Implement connection testing UI
+- [x] 16. Implement connection testing UI
+
+
+
+
   - Add "Test Connection" button to profile form
   - Implement test connection flow in ViewModel
   - Display test results (success/failure, latency)

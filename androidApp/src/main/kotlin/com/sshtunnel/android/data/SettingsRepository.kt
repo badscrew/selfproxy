@@ -6,7 +6,8 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
-import com.sshtunnel.ssh.SSHImplementationType
+// TODO: Remove SSH settings - no longer needed for Shadowsocks
+// import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map

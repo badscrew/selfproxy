@@ -16,7 +16,8 @@ import com.sshtunnel.logging.Logger
 import com.sshtunnel.reconnection.AutoReconnectService
 import com.sshtunnel.reconnection.DisconnectReason
 import com.sshtunnel.reconnection.ReconnectStatus
-import com.sshtunnel.ssh.*
+// TODO: Remove SSH imports - this file needs to be updated for Shadowsocks
+// import com.sshtunnel.ssh.*
 import com.sshtunnel.storage.CredentialStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest

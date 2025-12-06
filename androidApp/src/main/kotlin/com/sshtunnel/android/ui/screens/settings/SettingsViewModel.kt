@@ -9,7 +9,8 @@ import com.sshtunnel.battery.BatteryOptimizationManager
 import com.sshtunnel.battery.BatteryState
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
-import com.sshtunnel.ssh.SSHImplementationType
+// TODO: Remove SSH settings - no longer needed for Shadowsocks
+// import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

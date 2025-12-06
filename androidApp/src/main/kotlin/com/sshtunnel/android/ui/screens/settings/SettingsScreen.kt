@@ -22,7 +22,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.sshtunnel.android.logging.LogExportService
 import com.sshtunnel.data.DnsMode
 import com.sshtunnel.logging.Logger
-import com.sshtunnel.ssh.SSHImplementationType
+// TODO: Remove SSH settings - no longer needed for Shadowsocks
+// import com.sshtunnel.ssh.SSHImplementationType
 import kotlinx.coroutines.launch
 
 /**
