@@ -48,6 +48,7 @@
 
 
 
+
   - Create PrivateKeyManager interface and implementation
   - Implement private key file creation in app's private directory
   - Implement secure file permission setting (owner read/write only)
@@ -62,7 +63,11 @@
   - **Property 7: Private key cleanup on termination**
   - **Validates: Requirements 4.1, 4.2, 4.4**
 
-- [ ] 4. Implement SSH Command Builder component
+- [x] 4. Implement SSH Command Builder component
+
+
+
+
   - Create SSHCommandBuilder interface and implementation
   - Implement command construction with dynamic port forwarding (-D option)
   - Add SSH options: -N (no remote command), -T (no pseudo-terminal)
@@ -72,7 +77,9 @@
   - Add port and user@host formatting
   - _Requirements: 1.5, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
-- [ ] 4.1 Write property test for SSH command builder
+- [x] 4.1 Write property test for SSH command builder
+
+
   - **Property 3: Dynamic port forwarding configuration**
   - **Property 6: SSH command includes private key path**
   - **Property 8: SSH command includes required options**
