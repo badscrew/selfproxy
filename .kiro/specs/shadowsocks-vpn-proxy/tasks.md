@@ -5,13 +5,18 @@
 
 
 
+
   - Write comprehensive guide for installing Shadowsocks on Ubuntu Linux
   - Include automated installation script with secure defaults
   - Document cipher selection and password generation
   - Provide troubleshooting tips and firewall configuration
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 2. Set up project dependencies and remove SSH code
+- [x] 2. Set up project dependencies and remove SSH code
+
+
+
+
   - Remove all SSH-related dependencies (JSch, native SSH binaries)
   - Add Shadowsocks library dependency (shadowsocks-android or shadowsocks-libev)
   - Remove SSH-specific code files and tests

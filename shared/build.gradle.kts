@@ -68,15 +68,11 @@ kotlin {
                 // SQLDelight Android Driver
                 implementation("app.cash.sqldelight:android-driver:2.0.1")
                 
-                // sshj for SSH (replaces JSch)
-                implementation("com.hierynomus:sshj:0.38.0")
+                // TODO: Shadowsocks library will be added in task 7
+                // For now, we'll implement a custom Shadowsocks client using
+                // standard Java/Kotlin networking libraries
                 
-                // SpongyCastle - Android-compatible BouncyCastle with full algorithm support
-                implementation("com.madgag.spongycastle:core:1.54.0.0")
-                implementation("com.madgag.spongycastle:prov:1.54.0.0")
-                implementation("com.madgag.spongycastle:pkix:1.54.0.0")
-                
-                // Android Security
+                // Android Security for credential encryption
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
             }
         }
