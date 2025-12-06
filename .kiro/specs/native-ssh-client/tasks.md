@@ -68,6 +68,7 @@
 
 
 
+
   - Create SSHCommandBuilder interface and implementation
   - Implement command construction with dynamic port forwarding (-D option)
   - Add SSH options: -N (no remote command), -T (no pseudo-terminal)
@@ -85,7 +86,11 @@
   - **Property 8: SSH command includes required options**
   - **Validates: Requirements 1.5, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7**
 
-- [ ] 5. Implement Process Manager component
+- [x] 5. Implement Process Manager component
+
+
+
+
   - Create ProcessManager interface and implementation
   - Implement process start with ProcessBuilder
   - Implement process output stream capture and monitoring
@@ -95,7 +100,9 @@
   - Implement process output monitoring with Flow
   - _Requirements: 6.1, 6.3, 7.1, 7.2, 7.3_
 
-- [ ] 5.1 Write property test for process manager
+- [x] 5.1 Write property test for process manager
+
+
   - **Property 9: Process output capture**
   - **Property 10: Process alive status check**
   - **Property 12: Process termination detection**
