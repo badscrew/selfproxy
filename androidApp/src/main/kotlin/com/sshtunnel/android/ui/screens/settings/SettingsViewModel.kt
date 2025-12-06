@@ -9,8 +9,6 @@ import com.sshtunnel.battery.BatteryOptimizationManager
 import com.sshtunnel.battery.BatteryState
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
-// TODO: Remove SSH settings - no longer needed for Shadowsocks
-// import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,15 +71,6 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
-     * Update SSH port.
-     */
-    fun updateSshPort(port: Int) {
-        viewModelScope.launch {
-            settingsRepository.updateSshPort(port)
-        }
-    }
-    
-    /**
      * Update connection timeout.
      */
     fun updateConnectionTimeout(timeoutSeconds: Int) {
@@ -100,29 +89,11 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
-     * Update compression setting.
-     */
-    fun updateEnableCompression(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.updateEnableCompression(enabled)
-        }
-    }
-    
-    /**
      * Update custom SOCKS5 port.
      */
     fun updateCustomSocksPort(port: Int?) {
         viewModelScope.launch {
             settingsRepository.updateCustomSocksPort(port)
-        }
-    }
-    
-    /**
-     * Update strict host key checking.
-     */
-    fun updateStrictHostKeyChecking(enabled: Boolean) {
-        viewModelScope.launch {
-            settingsRepository.updateStrictHostKeyChecking(enabled)
         }
     }
     
@@ -141,15 +112,6 @@ class SettingsViewModel @Inject constructor(
     fun updateVerboseLogging(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateVerboseLogging(enabled)
-        }
-    }
-    
-    /**
-     * Update SSH implementation type.
-     */
-    fun updateSshImplementationType(type: SSHImplementationType) {
-        viewModelScope.launch {
-            settingsRepository.updateSshImplementationType(type)
         }
     }
     

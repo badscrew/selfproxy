@@ -330,6 +330,7 @@
 
 
 
+
   - Update ProfilesViewModel for Shadowsocks profiles
   - Update ConnectionViewModel for Shadowsocks connection
   - Add connection testing logic to ViewModel
@@ -337,7 +338,10 @@
   - Add error handling and user feedback
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 3.1, 3.2, 3.3, 7.1, 7.2, 7.3, 8.1_
 
-- [ ] 19. Update dependency injection
+- [x] 19. Update dependency injection
+
+
+
   - Remove SSH-related DI modules
   - Add Shadowsocks client to DI
   - Add ConnectionManager to DI

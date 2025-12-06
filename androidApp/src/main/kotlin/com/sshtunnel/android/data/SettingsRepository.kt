@@ -6,8 +6,6 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
-// TODO: Remove SSH settings - no longer needed for Shadowsocks
-// import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,15 +23,11 @@ class SettingsRepository @Inject constructor(
     private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
     
     companion object {
-        private val SSH_PORT = intPreferencesKey("ssh_port")
         private val CONNECTION_TIMEOUT = intPreferencesKey("connection_timeout")
         private val KEEP_ALIVE_INTERVAL = intPreferencesKey("keep_alive_interval")
-        private val ENABLE_COMPRESSION = booleanPreferencesKey("enable_compression")
         private val CUSTOM_SOCKS_PORT = intPreferencesKey("custom_socks_port")
-        private val STRICT_HOST_KEY_CHECKING = booleanPreferencesKey("strict_host_key_checking")
         private val DNS_MODE = stringPreferencesKey("dns_mode")
         private val VERBOSE_LOGGING = booleanPreferencesKey("verbose_logging")
-        private val SSH_IMPLEMENTATION_TYPE = stringPreferencesKey("ssh_implementation_type")
     }
     
     /**
@@ -41,12 +35,9 @@ class SettingsRepository @Inject constructor(
      */
     val settingsFlow: Flow<ConnectionSettings> = context.dataStore.data.map { preferences ->
         ConnectionSettings(
-            sshPort = preferences[SSH_PORT] ?: 22,
             connectionTimeout = (preferences[CONNECTION_TIMEOUT] ?: 30).seconds,
             keepAliveInterval = (preferences[KEEP_ALIVE_INTERVAL] ?: 60).seconds,
-            enableCompression = preferences[ENABLE_COMPRESSION] ?: false,
             customSocksPort = preferences[CUSTOM_SOCKS_PORT],
-            strictHostKeyChecking = preferences[STRICT_HOST_KEY_CHECKING] ?: false,
             dnsMode = preferences[DNS_MODE]?.let { 
                 try {
                     DnsMode.valueOf(it)
@@ -54,24 +45,8 @@ class SettingsRepository @Inject constructor(
                     DnsMode.THROUGH_TUNNEL
                 }
             } ?: DnsMode.THROUGH_TUNNEL,
-            verboseLogging = preferences[VERBOSE_LOGGING] ?: false,
-            sshImplementationType = preferences[SSH_IMPLEMENTATION_TYPE]?.let {
-                try {
-                    SSHImplementationType.valueOf(it)
-                } catch (e: IllegalArgumentException) {
-                    SSHImplementationType.AUTO
-                }
-            } ?: SSHImplementationType.AUTO
+            verboseLogging = preferences[VERBOSE_LOGGING] ?: false
         )
-    }
-    
-    /**
-     * Update SSH port.
-     */
-    suspend fun updateSshPort(port: Int) {
-        context.dataStore.edit { preferences ->
-            preferences[SSH_PORT] = port
-        }
     }
     
     /**
@@ -93,15 +68,6 @@ class SettingsRepository @Inject constructor(
     }
     
     /**
-     * Update compression setting.
-     */
-    suspend fun updateEnableCompression(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[ENABLE_COMPRESSION] = enabled
-        }
-    }
-    
-    /**
      * Update custom SOCKS5 port.
      */
     suspend fun updateCustomSocksPort(port: Int?) {
@@ -111,15 +77,6 @@ class SettingsRepository @Inject constructor(
             } else {
                 preferences.remove(CUSTOM_SOCKS_PORT)
             }
-        }
-    }
-    
-    /**
-     * Update strict host key checking.
-     */
-    suspend fun updateStrictHostKeyChecking(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[STRICT_HOST_KEY_CHECKING] = enabled
         }
     }
     
@@ -138,15 +95,6 @@ class SettingsRepository @Inject constructor(
     suspend fun updateVerboseLogging(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[VERBOSE_LOGGING] = enabled
-        }
-    }
-    
-    /**
-     * Update SSH implementation type.
-     */
-    suspend fun updateSshImplementationType(type: SSHImplementationType) {
-        context.dataStore.edit { preferences ->
-            preferences[SSH_IMPLEMENTATION_TYPE] = type.name
         }
     }
     
