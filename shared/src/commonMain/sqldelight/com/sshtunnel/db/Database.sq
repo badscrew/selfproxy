@@ -1,14 +1,13 @@
--- SSH Tunnel Proxy Database Schema
+-- Shadowsocks VPN Proxy Database Schema
 
 -- Server Profiles Table
--- Stores SSH server connection details and credentials
+-- Stores Shadowsocks server connection details
 CREATE TABLE server_profiles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    hostname TEXT NOT NULL,
-    port INTEGER NOT NULL DEFAULT 22,
-    username TEXT NOT NULL,
-    keyType TEXT NOT NULL,
+    serverHost TEXT NOT NULL,
+    serverPort INTEGER NOT NULL DEFAULT 8388,
+    cipher TEXT NOT NULL,
     createdAt INTEGER NOT NULL,
     lastUsed INTEGER
 );
@@ -31,12 +30,12 @@ selectProfileById:
 SELECT * FROM server_profiles WHERE id = ?;
 
 insertProfile:
-INSERT INTO server_profiles(name, hostname, port, username, keyType, createdAt, lastUsed)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO server_profiles(name, serverHost, serverPort, cipher, createdAt, lastUsed)
+VALUES (?, ?, ?, ?, ?, ?);
 
 updateProfile:
 UPDATE server_profiles
-SET name = ?, hostname = ?, port = ?, username = ?, keyType = ?, lastUsed = ?
+SET name = ?, serverHost = ?, serverPort = ?, cipher = ?, lastUsed = ?
 WHERE id = ?;
 
 updateLastUsed:

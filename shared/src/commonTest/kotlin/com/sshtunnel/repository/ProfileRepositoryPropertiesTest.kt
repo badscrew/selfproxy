@@ -44,8 +44,8 @@ class ProfileRepositoryPropertiesTest {
     
     @Test
     fun `getAllProfiles should return all saved profiles with correct names and addresses`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 7: Profile listing completeness
-        // Validates: Requirements 2.2
+        // Feature: shadowsocks-vpn-proxy, Property 1: Profile CRUD operations maintain data integrity
+        // Validates: Requirements 1.1, 1.2, 1.3
         checkAll(
             iterations = 100,
             Arb.list(Arb.serverProfile(), 0..10)
@@ -71,23 +71,22 @@ class ProfileRepositoryPropertiesTest {
             // Verify count matches
             retrievedProfiles.size shouldBe profiles.size
             
-            // Verify all profiles are present with correct names and hostnames
-            val expectedNamesAndHosts = profiles.map { it.name to it.hostname }
-            val actualNamesAndHosts = retrievedProfiles.map { it.name to it.hostname }
+            // Verify all profiles are present with correct names and server hosts
+            val expectedNamesAndHosts = profiles.map { it.name to it.serverHost }
+            val actualNamesAndHosts = retrievedProfiles.map { it.name to it.serverHost }
             
             actualNamesAndHosts shouldContainExactlyInAnyOrder expectedNamesAndHosts
             
             // Verify all other fields are preserved correctly
             profiles.forEachIndexed { _, originalProfile ->
                 val retrievedProfile = retrievedProfiles.find { 
-                    it.name == originalProfile.name && it.hostname == originalProfile.hostname 
+                    it.name == originalProfile.name && it.serverHost == originalProfile.serverHost 
                 }
                 
                 retrievedProfile shouldBe retrievedProfile // Should not be null
                 retrievedProfile?.let {
-                    it.port shouldBe originalProfile.port
-                    it.username shouldBe originalProfile.username
-                    it.keyType shouldBe originalProfile.keyType
+                    it.serverPort shouldBe originalProfile.serverPort
+                    it.cipher shouldBe originalProfile.cipher
                     it.createdAt shouldBe originalProfile.createdAt
                     it.lastUsed shouldBe originalProfile.lastUsed
                 }
@@ -97,8 +96,8 @@ class ProfileRepositoryPropertiesTest {
     
     @Test
     fun `getProfile should load correct profile details for any saved profile`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 8: Profile selection loads correct details
-        // Validates: Requirements 2.3
+        // Feature: shadowsocks-vpn-proxy, Property 1: Profile CRUD operations maintain data integrity
+        // Validates: Requirements 1.1, 1.2, 1.3
         checkAll(
             iterations = 100,
             Arb.serverProfile()
@@ -125,10 +124,9 @@ class ProfileRepositoryPropertiesTest {
             retrievedProfile?.let {
                 it.id shouldBe profileId
                 it.name shouldBe profile.name
-                it.hostname shouldBe profile.hostname
-                it.port shouldBe profile.port
-                it.username shouldBe profile.username
-                it.keyType shouldBe profile.keyType
+                it.serverHost shouldBe profile.serverHost
+                it.serverPort shouldBe profile.serverPort
+                it.cipher shouldBe profile.cipher
                 it.createdAt shouldBe profile.createdAt
                 it.lastUsed shouldBe profile.lastUsed
             }
@@ -137,8 +135,8 @@ class ProfileRepositoryPropertiesTest {
     
     @Test
     fun `deleteProfile should remove profile from storage`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 9: Profile deletion removes data
-        // Validates: Requirements 2.4
+        // Feature: shadowsocks-vpn-proxy, Property 3: Profile deletion removes all associated data
+        // Validates: Requirements 1.4, 2.3
         checkAll(
             iterations = 100,
             Arb.serverProfile()
@@ -175,8 +173,8 @@ class ProfileRepositoryPropertiesTest {
     
     @Test
     fun `updateProfile should persist all changes to profile data`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 10: Profile updates persist changes
-        // Validates: Requirements 2.5
+        // Feature: shadowsocks-vpn-proxy, Property 1: Profile CRUD operations maintain data integrity
+        // Validates: Requirements 1.1, 1.2, 1.3
         checkAll(
             iterations = 100,
             Arb.serverProfile(),
@@ -209,10 +207,9 @@ class ProfileRepositoryPropertiesTest {
             retrievedProfile?.let {
                 it.id shouldBe profileId
                 it.name shouldBe updatedProfile.name
-                it.hostname shouldBe updatedProfile.hostname
-                it.port shouldBe updatedProfile.port
-                it.username shouldBe updatedProfile.username
-                it.keyType shouldBe updatedProfile.keyType
+                it.serverHost shouldBe updatedProfile.serverHost
+                it.serverPort shouldBe updatedProfile.serverPort
+                it.cipher shouldBe updatedProfile.cipher
                 // createdAt should remain unchanged from original
                 it.createdAt shouldBe originalProfile.createdAt
                 it.lastUsed shouldBe updatedProfile.lastUsed

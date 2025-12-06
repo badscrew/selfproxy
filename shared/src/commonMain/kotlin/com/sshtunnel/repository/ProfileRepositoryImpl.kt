@@ -3,7 +3,7 @@ package com.sshtunnel.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
-import com.sshtunnel.data.KeyType
+import com.sshtunnel.data.CipherMethod
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.db.SSHTunnelDatabase
 import kotlinx.coroutines.Dispatchers
@@ -13,8 +13,8 @@ import kotlinx.coroutines.withContext
 /**
  * Implementation of ProfileRepository using SQLDelight for cross-platform database access.
  * 
- * This implementation provides thread-safe CRUD operations for server profiles with
- * proper error handling using Result types.
+ * This implementation provides thread-safe CRUD operations for Shadowsocks server profiles
+ * with proper error handling using Result types.
  * 
  * @property database The SQLDelight database instance
  */
@@ -28,10 +28,9 @@ class ProfileRepositoryImpl(
         try {
             queries.insertProfile(
                 name = profile.name,
-                hostname = profile.hostname,
-                port = profile.port.toLong(),
-                username = profile.username,
-                keyType = profile.keyType.name,
+                serverHost = profile.serverHost,
+                serverPort = profile.serverPort.toLong(),
+                cipher = profile.cipher.name,
                 createdAt = profile.createdAt,
                 lastUsed = profile.lastUsed
             )
@@ -57,19 +56,14 @@ class ProfileRepositoryImpl(
                 .mapToOneOrNull(Dispatchers.Default)
                 .first()
                 ?.let { dbProfile ->
-                    @Suppress("DEPRECATION")
                     ServerProfile(
                         id = dbProfile.id,
                         name = dbProfile.name,
-                        serverHost = dbProfile.hostname,
-                        serverPort = dbProfile.port.toInt(),
-                        cipher = com.sshtunnel.data.CipherMethod.AES_256_GCM, // Default cipher for migration
+                        serverHost = dbProfile.serverHost,
+                        serverPort = dbProfile.serverPort.toInt(),
+                        cipher = CipherMethod.valueOf(dbProfile.cipher),
                         createdAt = dbProfile.createdAt,
-                        lastUsed = dbProfile.lastUsed,
-                        hostname = dbProfile.hostname,
-                        port = dbProfile.port.toInt(),
-                        username = dbProfile.username,
-                        keyType = KeyType.valueOf(dbProfile.keyType)
+                        lastUsed = dbProfile.lastUsed
                     )
                 }
         } catch (e: Exception) {
@@ -84,19 +78,14 @@ class ProfileRepositoryImpl(
                 .mapToList(Dispatchers.Default)
                 .first()
                 .map { dbProfile ->
-                    @Suppress("DEPRECATION")
                     ServerProfile(
                         id = dbProfile.id,
                         name = dbProfile.name,
-                        serverHost = dbProfile.hostname,
-                        serverPort = dbProfile.port.toInt(),
-                        cipher = com.sshtunnel.data.CipherMethod.AES_256_GCM, // Default cipher for migration
+                        serverHost = dbProfile.serverHost,
+                        serverPort = dbProfile.serverPort.toInt(),
+                        cipher = CipherMethod.valueOf(dbProfile.cipher),
                         createdAt = dbProfile.createdAt,
-                        lastUsed = dbProfile.lastUsed,
-                        hostname = dbProfile.hostname,
-                        port = dbProfile.port.toInt(),
-                        username = dbProfile.username,
-                        keyType = KeyType.valueOf(dbProfile.keyType)
+                        lastUsed = dbProfile.lastUsed
                     )
                 }
         } catch (e: Exception) {
@@ -114,10 +103,9 @@ class ProfileRepositoryImpl(
             
             queries.updateProfile(
                 name = profile.name,
-                hostname = profile.hostname,
-                port = profile.port.toLong(),
-                username = profile.username,
-                keyType = profile.keyType.name,
+                serverHost = profile.serverHost,
+                serverPort = profile.serverPort.toLong(),
+                cipher = profile.cipher.name,
                 lastUsed = profile.lastUsed,
                 id = profile.id
             )

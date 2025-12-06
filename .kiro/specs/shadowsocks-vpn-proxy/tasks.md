@@ -30,6 +30,7 @@
 
 
 
+
   - Create CipherMethod enum with supported ciphers
   - Create ServerProfile data class with Shadowsocks fields
   - Create ShadowsocksConfig data class
@@ -44,7 +45,10 @@
   - **Property 1: Profile CRUD operations maintain data integrity**
   - **Validates: Requirements 1.1, 1.2, 1.3**
 
-- [ ] 4. Update database schema for Shadowsocks
+- [x] 4. Update database schema for Shadowsocks
+
+
+
   - Modify server_profiles table to include Shadowsocks fields (server_host, server_port, cipher)
   - Remove SSH-specific fields (username, key_type, etc.)
   - Create migration script from old schema to new schema

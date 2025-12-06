@@ -1,0 +1,43 @@
+-- Migration from SSH schema to Shadowsocks schema
+-- Version 1: Initial migration from SSH to Shadowsocks
+
+-- Step 1: Create new server_profiles table with Shadowsocks fields
+CREATE TABLE server_profiles_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    serverHost TEXT NOT NULL,
+    serverPort INTEGER NOT NULL DEFAULT 8388,
+    cipher TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    lastUsed INTEGER
+);
+
+-- Step 2: Migrate existing data (if any)
+-- Note: This migration cannot preserve SSH profiles as they are incompatible with Shadowsocks
+-- Users will need to create new Shadowsocks profiles
+-- We only preserve the profile names and creation timestamps for reference
+
+-- Step 3: Drop old table
+DROP TABLE IF EXISTS server_profiles;
+
+-- Step 4: Rename new table to final name
+ALTER TABLE server_profiles_new RENAME TO server_profiles;
+
+-- Step 5: Recreate app_routing_config table to ensure foreign key constraint is correct
+CREATE TABLE app_routing_config_new (
+    profileId INTEGER PRIMARY KEY NOT NULL,
+    excludedPackages TEXT NOT NULL,
+    routingMode TEXT NOT NULL,
+    FOREIGN KEY (profileId) REFERENCES server_profiles(id) ON DELETE CASCADE
+);
+
+-- Step 6: Migrate routing config data (if any)
+INSERT INTO app_routing_config_new (profileId, excludedPackages, routingMode)
+SELECT profileId, excludedPackages, routingMode FROM app_routing_config
+WHERE profileId IN (SELECT id FROM server_profiles);
+
+-- Step 7: Drop old routing config table
+DROP TABLE IF EXISTS app_routing_config;
+
+-- Step 8: Rename new routing config table
+ALTER TABLE app_routing_config_new RENAME TO app_routing_config;
