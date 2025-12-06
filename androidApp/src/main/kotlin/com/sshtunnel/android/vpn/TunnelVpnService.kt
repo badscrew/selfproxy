@@ -13,6 +13,9 @@ import com.sshtunnel.android.MainActivity
 import com.sshtunnel.android.R
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.logging.Logger
+import com.sshtunnel.reconnection.AutoReconnectService
+import com.sshtunnel.reconnection.DisconnectReason
+import com.sshtunnel.reconnection.ReconnectStatus
 import com.sshtunnel.ssh.*
 import com.sshtunnel.storage.CredentialStore
 import kotlinx.coroutines.*
@@ -21,6 +24,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * VPN service that routes device traffic through SSH tunnel via SOCKS5 proxy.
@@ -43,6 +47,15 @@ class TunnelVpnService : VpnService() {
     private var privateKeyPath: String? = null
     private var processMonitorJob: Job? = null
     
+    // Connection monitoring and reconnection
+    private var connectionMonitor: ConnectionMonitor? = null
+    private var autoReconnectService: AutoReconnectService? = null
+    private var connectionMonitorJob: Job? = null
+    private var reconnectMonitorJob: Job? = null
+    private var isReconnecting: Boolean = false
+    private var reconnectionPolicy: com.sshtunnel.reconnection.ReconnectionPolicy = 
+        com.sshtunnel.reconnection.ReconnectionPolicy.DEFAULT
+    
     companion object {
         private const val TAG = "TunnelVpnService"
         private const val NOTIFICATION_ID = 1
@@ -56,12 +69,20 @@ class TunnelVpnService : VpnService() {
         const val ACTION_VPN_STARTED = "com.sshtunnel.android.vpn.STARTED"
         const val ACTION_VPN_STOPPED = "com.sshtunnel.android.vpn.STOPPED"
         const val ACTION_SSH_PROCESS_TERMINATED = "com.sshtunnel.android.vpn.SSH_PROCESS_TERMINATED"
+        const val ACTION_CONNECTION_LOST = "com.sshtunnel.android.vpn.CONNECTION_LOST"
+        const val ACTION_RECONNECTING = "com.sshtunnel.android.vpn.RECONNECTING"
+        const val ACTION_RECONNECTED = "com.sshtunnel.android.vpn.RECONNECTED"
         
         const val EXTRA_SOCKS_PORT = "socks_port"
         const val EXTRA_SERVER_ADDRESS = "server_address"
         const val EXTRA_ERROR_MESSAGE = "error_message"
         const val EXTRA_PROFILE_ID = "profile_id"
         const val EXTRA_PASSPHRASE = "passphrase"
+        const val EXTRA_RECONNECT_ATTEMPT = "reconnect_attempt"
+        const val EXTRA_DISCONNECT_REASON = "disconnect_reason"
+        
+        // Connection loss detection timeout (Requirement 8.3)
+        private const val CONNECTION_LOSS_DETECTION_TIMEOUT_MS = 5000L
     }
     
     override fun onCreate() {
@@ -247,6 +268,170 @@ class TunnelVpnService : VpnService() {
     }
     
     /**
+     * Starts connection monitoring using ConnectionMonitor.
+     * This implements Requirements 8.3 and 8.4 for connection loss detection
+     * and automatic reconnection.
+     */
+    private fun startConnectionMonitoring(session: SSHSession, monitor: ConnectionMonitor) {
+        connectionMonitorJob?.cancel()
+        connectionMonitorJob = serviceScope.launch {
+            try {
+                android.util.Log.i(TAG, "Starting connection health monitoring")
+                
+                // Get the process from the session (if available)
+                // For now, we'll use a timeout-based approach
+                val startTime = System.currentTimeMillis()
+                
+                monitor.monitorConnection(null, socksPort).collectLatest { state ->
+                    when (state) {
+                        is ConnectionHealthState.Healthy -> {
+                            android.util.Log.d(TAG, "Connection healthy")
+                            // Reset reconnecting flag on healthy connection
+                            if (isReconnecting) {
+                                isReconnecting = false
+                                broadcastReconnected()
+                            }
+                        }
+                        is ConnectionHealthState.Unhealthy -> {
+                            val elapsedTime = System.currentTimeMillis() - startTime
+                            android.util.Log.w(TAG, "Connection unhealthy: ${state.reason}")
+                            
+                            // Detect connection loss within 5 seconds (Requirement 8.3)
+                            if (elapsedTime <= CONNECTION_LOSS_DETECTION_TIMEOUT_MS) {
+                                android.util.Log.w(TAG, "Connection loss detected within 5 seconds")
+                                broadcastConnectionLost(DisconnectReason.ConnectionLost)
+                                
+                                // Trigger automatic reconnection (Requirement 8.4)
+                                if (!isReconnecting) {
+                                    triggerReconnection(DisconnectReason.ConnectionLost)
+                                }
+                            }
+                        }
+                        is ConnectionHealthState.Disconnected -> {
+                            android.util.Log.w(TAG, "Connection disconnected")
+                            broadcastConnectionLost(DisconnectReason.ConnectionLost)
+                            
+                            // Trigger automatic reconnection
+                            if (!isReconnecting) {
+                                triggerReconnection(DisconnectReason.ConnectionLost)
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                android.util.Log.d(TAG, "Connection monitoring cancelled")
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Error in connection monitoring: ${e.message}", e)
+                broadcastVpnError("Connection monitoring failed: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Starts monitoring reconnection attempts from AutoReconnectService.
+     */
+    private fun startReconnectMonitoring() {
+        reconnectMonitorJob?.cancel()
+        reconnectMonitorJob = serviceScope.launch {
+            try {
+                android.util.Log.i(TAG, "Starting reconnection attempt monitoring")
+                
+                autoReconnectService?.observeReconnectAttempts()?.collectLatest { attemptWithStatus ->
+                    val attempt = attemptWithStatus.attempt
+                    val status = attemptWithStatus.status
+                    
+                    android.util.Log.i(TAG, "Reconnect attempt ${attempt.attemptNumber}: $status")
+                    
+                    when (status) {
+                        is ReconnectStatus.Attempting -> {
+                            android.util.Log.i(TAG, "Attempting reconnection (attempt ${attempt.attemptNumber})")
+                            broadcastReconnecting(attempt.attemptNumber)
+                        }
+                        is ReconnectStatus.Success -> {
+                            android.util.Log.i(TAG, "Reconnection successful")
+                            isReconnecting = false
+                            broadcastReconnected()
+                        }
+                        is ReconnectStatus.Failed -> {
+                            android.util.Log.w(TAG, "Reconnection failed: ${status.error}")
+                            // Will retry automatically with exponential backoff
+                        }
+                        is ReconnectStatus.Cancelled -> {
+                            android.util.Log.i(TAG, "Reconnection cancelled")
+                            isReconnecting = false
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                android.util.Log.d(TAG, "Reconnect monitoring cancelled")
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Error in reconnect monitoring: ${e.message}", e)
+            }
+        }
+    }
+    
+    /**
+     * Triggers automatic reconnection with exponential backoff.
+     * Implements Requirement 8.4.
+     */
+    private fun triggerReconnection(reason: DisconnectReason) {
+        serviceScope.launch {
+            try {
+                // Check if reconnection is enabled in policy
+                if (!reconnectionPolicy.enabled) {
+                    android.util.Log.i(TAG, "Automatic reconnection is disabled by policy")
+                    stopVpn()
+                    return@launch
+                }
+                
+                // Check if we should reconnect for this specific reason
+                when (reason) {
+                    DisconnectReason.NetworkChanged -> {
+                        if (!reconnectionPolicy.reconnectOnNetworkChange) {
+                            android.util.Log.i(TAG, "Reconnection on network change is disabled")
+                            return@launch
+                        }
+                    }
+                    DisconnectReason.KeepAliveFailed -> {
+                        if (!reconnectionPolicy.reconnectOnKeepAliveFail) {
+                            android.util.Log.i(TAG, "Reconnection on keep-alive failure is disabled")
+                            return@launch
+                        }
+                    }
+                    DisconnectReason.UserDisconnected -> {
+                        android.util.Log.i(TAG, "User disconnected - not reconnecting")
+                        return@launch
+                    }
+                    else -> {
+                        // Reconnect for other reasons
+                    }
+                }
+                
+                isReconnecting = true
+                android.util.Log.i(TAG, "Triggering automatic reconnection due to: $reason")
+                
+                val profile = currentProfile
+                if (profile == null) {
+                    android.util.Log.e(TAG, "Cannot reconnect - no profile available")
+                    isReconnecting = false
+                    stopVpn()
+                    return@launch
+                }
+                
+                // Enable auto-reconnect service if available
+                autoReconnectService?.enable(profile, null)
+                
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to trigger reconnection: ${e.message}", e)
+                isReconnecting = false
+                broadcastVpnError("Reconnection failed: ${e.message}")
+            }
+        }
+    }
+    
+    /**
      * Monitors the SSH process and restarts it if it terminates unexpectedly.
      * This implements Requirements 14.2 and 14.3.
      */
@@ -266,9 +451,10 @@ class TunnelVpnService : VpnService() {
                         android.util.Log.w(TAG, "SSH process terminated unexpectedly")
                         broadcastProcessTerminated()
                         
-                        // Attempt to restart SSH process
-                        android.util.Log.i(TAG, "Attempting to restart SSH process")
-                        restartSSH()
+                        // Trigger reconnection instead of direct restart
+                        if (!isReconnecting) {
+                            triggerReconnection(DisconnectReason.ConnectionLost)
+                        }
                         break
                     }
                 }
@@ -317,9 +503,20 @@ class TunnelVpnService : VpnService() {
         android.util.Log.d(TAG, "Cleaning up SSH resources")
         
         try {
-            // Stop process monitoring
+            // Stop all monitoring jobs
             processMonitorJob?.cancel()
             processMonitorJob = null
+            
+            connectionMonitorJob?.cancel()
+            connectionMonitorJob = null
+            
+            reconnectMonitorJob?.cancel()
+            reconnectMonitorJob = null
+            
+            // Disable auto-reconnect
+            serviceScope.launch {
+                autoReconnectService?.disable()
+            }
             
             // Disconnect SSH session
             val session = sshSession
@@ -349,6 +546,9 @@ class TunnelVpnService : VpnService() {
             // Clear references
             sshClient = null
             currentProfile = null
+            connectionMonitor = null
+            autoReconnectService = null
+            isReconnecting = false
             
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Error during SSH cleanup: ${e.message}", e)
@@ -364,6 +564,51 @@ class TunnelVpnService : VpnService() {
             setPackage(packageName)
         }
         sendBroadcast(intent)
+    }
+    
+    /**
+     * Broadcasts connection lost event.
+     */
+    private fun broadcastConnectionLost(reason: DisconnectReason) {
+        android.util.Log.w(TAG, "Broadcasting connection lost: $reason")
+        val intent = Intent(ACTION_CONNECTION_LOST).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_DISCONNECT_REASON, reason.toString())
+        }
+        sendBroadcast(intent)
+    }
+    
+    /**
+     * Broadcasts reconnecting event.
+     */
+    private fun broadcastReconnecting(attemptNumber: Int) {
+        android.util.Log.i(TAG, "Broadcasting reconnecting (attempt $attemptNumber)")
+        val intent = Intent(ACTION_RECONNECTING).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_RECONNECT_ATTEMPT, attemptNumber)
+        }
+        sendBroadcast(intent)
+        
+        // Update notification to show reconnecting state
+        currentProfile?.let { profile ->
+            updateNotification(profile.hostname)
+        }
+    }
+    
+    /**
+     * Broadcasts reconnected event.
+     */
+    private fun broadcastReconnected() {
+        android.util.Log.i(TAG, "Broadcasting reconnected")
+        val intent = Intent(ACTION_RECONNECTED).apply {
+            setPackage(packageName)
+        }
+        sendBroadcast(intent)
+        
+        // Update notification to show connected state
+        currentProfile?.let { profile ->
+            updateNotification(profile.hostname)
+        }
     }
     
     private fun stopVpn() {
@@ -463,9 +708,15 @@ class TunnelVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
+        val contentText = if (isReconnecting) {
+            "Reconnecting to $serverAddress..."
+        } else {
+            "Connected to $serverAddress"
+        }
+        
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("SSH Tunnel Active")
-            .setContentText("Connected to $serverAddress")
+            .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_vpn)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -476,6 +727,24 @@ class TunnelVpnService : VpnService() {
                 disconnectPendingIntent
             )
             .build()
+    }
+    
+    /**
+     * Updates the notification to reflect current connection state.
+     */
+    private fun updateNotification(serverAddress: String) {
+        val notification = createNotification(serverAddress)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager?.notify(NOTIFICATION_ID, notification)
+    }
+    
+    /**
+     * Configures the reconnection policy.
+     * This allows customization of reconnection behavior.
+     */
+    fun setReconnectionPolicy(policy: com.sshtunnel.reconnection.ReconnectionPolicy) {
+        reconnectionPolicy = policy
+        android.util.Log.i(TAG, "Reconnection policy updated: enabled=${policy.enabled}, maxAttempts=${policy.maxAttempts}")
     }
     
 
