@@ -121,7 +121,7 @@ class AndroidSSHClientFactory(
      */
     private fun createNativeClient(logger: Logger): SSHClient {
         val privateKeyManager = AndroidPrivateKeyManager(context, logger)
-        val commandBuilder = AndroidSSHCommandBuilder()
+        val commandBuilder = AndroidSSHCommandBuilder(logger)
         val processManager = AndroidProcessManager(logger)
         val connectionMonitor = AndroidConnectionMonitor(processManager, logger)
         

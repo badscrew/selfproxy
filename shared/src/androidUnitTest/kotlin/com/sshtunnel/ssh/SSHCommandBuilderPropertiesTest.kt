@@ -2,6 +2,8 @@ package com.sshtunnel.ssh
 
 import com.sshtunnel.data.KeyType
 import com.sshtunnel.data.ServerProfile
+import com.sshtunnel.logging.LogEntry
+import com.sshtunnel.logging.Logger
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.property.Arb
@@ -18,7 +20,19 @@ import org.junit.Test
  */
 class SSHCommandBuilderPropertiesTest {
     
-    private val commandBuilder = AndroidSSHCommandBuilder()
+    private val testLogger = object : Logger {
+        override fun verbose(tag: String, message: String, throwable: Throwable?) {}
+        override fun debug(tag: String, message: String, throwable: Throwable?) {}
+        override fun info(tag: String, message: String, throwable: Throwable?) {}
+        override fun warn(tag: String, message: String, throwable: Throwable?) {}
+        override fun error(tag: String, message: String, throwable: Throwable?) {}
+        override fun getLogEntries(): List<LogEntry> = emptyList()
+        override fun clearLogs() {}
+        override fun setVerboseEnabled(enabled: Boolean) {}
+        override fun isVerboseEnabled(): Boolean = false
+    }
+    
+    private val commandBuilder = AndroidSSHCommandBuilder(testLogger)
     
     /**
      * Feature: native-ssh-client, Property 3: Dynamic port forwarding configuration
@@ -209,6 +223,7 @@ class SSHCommandBuilderPropertiesTest {
         
         /**
          * Generates valid file paths for private keys.
+         * Note: These paths may not exist in test environment, but are valid format.
          */
         fun Arb.Companion.filePath(): Arb<String> = arbitrary {
             val id = Arb.long(1L, 10000L).bind()
