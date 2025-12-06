@@ -43,12 +43,12 @@ class AndroidBinaryManager(
     }
     
     // Binary checksums for verification (SHA-256)
-    // These should match the actual binaries bundled in the APK
+    // These are the actual checksums of the OpenSSH 10.2p1 binaries from Termux
     private val binaryChecksums = mapOf(
-        Architecture.ARM64 to "placeholder_arm64_checksum",
-        Architecture.ARM32 to "placeholder_arm32_checksum",
-        Architecture.X86_64 to "placeholder_x86_64_checksum",
-        Architecture.X86 to "placeholder_x86_checksum"
+        Architecture.ARM64 to "d4286d8371bde67fedf3d425f1d93aa4561bef635642b8238342452e8bee6e51",
+        Architecture.ARM32 to "624a9545daa72777fe5c350e3cc80f04e8e1c24efc35acffcf0755f314d5af0a",
+        Architecture.X86_64 to "0491cb4fb1b576b7d6043b2506dd9c61ad93401db089f7f04581edca5ffc9d7a",
+        Architecture.X86 to "aeeab6dc3f2bf8c232feda3d6109669148a863ac097a4d087e3cbd40066a7371"
     )
     
     /**
@@ -72,7 +72,7 @@ class AndroidBinaryManager(
         try {
             logger.debug(TAG, "Extracting SSH binary for architecture: ${architecture.abiName}")
             
-            // Ensure directory exists (lazy initialization)
+            // Ensure directory exists
             ensureBinaryDirectory()
             
             // Check if cached binary is valid (fast path)
@@ -82,16 +82,34 @@ class AndroidBinaryManager(
                 return@withContext Result.success(cachedPath)
             }
             
-            // Extract binary from APK with optimized I/O
-            val binaryName = "ssh"
-            val sourcePath = "lib/${architecture.abiName}/$binaryName"
-            val destFile = File(binaryDir, "${binaryName}_${architecture.abiName}")
+            // Extract binary from APK
+            // The binaries are in lib/${architecture.abiName}/ in the APK
+            val sourcePath = "lib/${architecture.abiName}/libssh.so"
+            val destFile = File(binaryDir, "ssh_${architecture.abiName}")
             
-            // Copy binary with larger buffer for better performance
-            context.assets.open(sourcePath).use { input ->
-                destFile.outputStream().buffered(BUFFER_SIZE).use { output ->
-                    input.copyTo(output, BUFFER_SIZE)
+            logger.debug(TAG, "Extracting from APK: $sourcePath -> ${destFile.absolutePath}")
+            
+            // Open the APK as a ZIP file and extract the binary
+            val apkPath = context.applicationInfo.sourceDir
+            val zipFile = java.util.zip.ZipFile(apkPath)
+            
+            try {
+                val entry = zipFile.getEntry(sourcePath)
+                if (entry == null) {
+                    logger.error(TAG, "SSH binary not found in APK at: $sourcePath")
+                    return@withContext Result.failure(
+                        Exception("SSH binary not found in APK for ${architecture.abiName}")
+                    )
                 }
+                
+                // Extract the binary
+                zipFile.getInputStream(entry).use { input ->
+                    destFile.outputStream().buffered(BUFFER_SIZE).use { output ->
+                        input.copyTo(output, BUFFER_SIZE)
+                    }
+                }
+            } finally {
+                zipFile.close()
             }
             
             // Set executable permissions
@@ -99,11 +117,11 @@ class AndroidBinaryManager(
                 logger.warn(TAG, "Failed to set executable permission on ${destFile.absolutePath}")
             }
             
-            // Verify checksum only on first extraction
+            // Verify the binary
             if (!verifyBinary(destFile.absolutePath)) {
                 destFile.delete()
                 return@withContext Result.failure(
-                    Exception("Binary checksum verification failed for ${architecture.abiName}")
+                    Exception("Binary verification failed for ${architecture.abiName}")
                 )
             }
             
@@ -173,8 +191,20 @@ class AndroidBinaryManager(
                 return@withContext false
             }
             
-            // Calculate SHA-256 checksum
-            val checksum = calculateChecksum(file)
+            // Basic file validation
+            if (file.length() == 0L) {
+                logger.warn(TAG, "Binary file is empty: $binaryPath")
+                return@withContext false
+            }
+            
+            // Check if file is executable
+            if (!file.canExecute()) {
+                logger.debug(TAG, "Setting executable permission on binary")
+                if (!file.setExecutable(true, true)) {
+                    logger.warn(TAG, "Failed to set executable permission")
+                    return@withContext false
+                }
+            }
             
             // Determine architecture from file name
             val architecture = Architecture.values().find { 
@@ -187,13 +217,20 @@ class AndroidBinaryManager(
             val expectedChecksum = binaryChecksums[architecture]
             if (expectedChecksum == null) {
                 logger.warn(TAG, "No expected checksum for architecture: ${architecture.abiName}")
-                // For now, allow if checksum is not defined (development mode)
-                return@withContext true
+                return@withContext false
             }
             
+            // Calculate SHA-256 checksum
+            logger.debug(TAG, "Verifying binary checksum for ${architecture.abiName}")
+            val checksum = calculateChecksum(file)
             val isValid = checksum == expectedChecksum
-            if (!isValid) {
-                logger.warn(TAG, "Checksum mismatch for ${architecture.abiName}: expected=$expectedChecksum, actual=$checksum")
+            
+            if (isValid) {
+                logger.info(TAG, "Binary checksum verified successfully for ${architecture.abiName}")
+            } else {
+                logger.error(TAG, "Checksum mismatch for ${architecture.abiName}")
+                logger.error(TAG, "Expected: $expectedChecksum")
+                logger.error(TAG, "Actual:   $checksum")
             }
             
             isValid

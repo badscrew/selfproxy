@@ -278,11 +278,22 @@ class TunnelVpnService : VpnService() {
             try {
                 android.util.Log.i(TAG, "Starting connection health monitoring")
                 
-                // Get the process from the session (if available)
-                // For now, we'll use a timeout-based approach
+                // Get the process from the session
+                val session = sshSession
+                if (session == null) {
+                    android.util.Log.w(TAG, "Cannot monitor connection: no active session")
+                    return@launch
+                }
+                
+                val process = (sshClient as? AndroidNativeSSHClient)?.getProcess(session.sessionId)
+                if (process == null) {
+                    android.util.Log.w(TAG, "Cannot monitor connection: process not available (may be using sshj)")
+                    return@launch
+                }
+                
                 val startTime = System.currentTimeMillis()
                 
-                monitor.monitorConnection(null, socksPort).collectLatest { state ->
+                monitor.monitorConnection(process, socksPort).collectLatest { state ->
                     when (state) {
                         is ConnectionHealthState.Healthy -> {
                             android.util.Log.d(TAG, "Connection healthy")
@@ -294,7 +305,7 @@ class TunnelVpnService : VpnService() {
                         }
                         is ConnectionHealthState.Unhealthy -> {
                             val elapsedTime = System.currentTimeMillis() - startTime
-                            android.util.Log.w(TAG, "Connection unhealthy: ${state.reason}")
+                            android.util.Log.w(TAG, "Connection unhealthy: ${state.message}")
                             
                             // Detect connection loss within 5 seconds (Requirement 8.3)
                             if (elapsedTime <= CONNECTION_LOSS_DETECTION_TIMEOUT_MS) {

@@ -94,24 +94,24 @@ class AndroidSSHClientFactory(
      * 
      * Native SSH is available if:
      * 1. The device architecture is supported
-     * 2. The SSH binary can be extracted or is already cached
+     * 2. The SSH binary exists in the APK
      * 
      * @return true if native SSH binary is available for this device architecture
      */
     override fun isNativeSSHAvailable(): Boolean {
         return try {
-            // Detect device architecture
+            // Check if the SSH binary exists in the APK
             val architecture = binaryManager.detectArchitecture()
+            val apkPath = context.applicationInfo.sourceDir
+            val zipFile = java.util.zip.ZipFile(apkPath)
             
-            // Check if binary exists in APK for this architecture
-            // We check if the binary resource exists
-            val binaryPath = "lib/$architecture/libssh.so"
-            val inputStream = context.assets.open(binaryPath)
-            inputStream.close()
-            
-            true
+            try {
+                val entry = zipFile.getEntry("lib/${architecture.abiName}/libssh.so")
+                entry != null
+            } finally {
+                zipFile.close()
+            }
         } catch (e: Exception) {
-            // Binary not found or error accessing it
             false
         }
     }

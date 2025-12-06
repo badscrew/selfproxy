@@ -323,7 +323,11 @@
   - Test user preference switching
   - _Requirements: 11.5, 11.6, 11.7_
 
-- [ ] 18. Perform manual testing and validation
+- [x] 18. Perform manual testing and validation
+
+
+
+
   - Test on ARM64 physical device
   - Test on x86_64 emulator
   - Test with different SSH servers

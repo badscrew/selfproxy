@@ -100,8 +100,9 @@ class SSHSecurityValidator(
             return Result.failure(SecurityException("Port out of valid range (1-65535)"))
         }
         
-        if (localPort !in MIN_PORT..MAX_PORT) {
-            return Result.failure(SecurityException("Local port out of valid range (1-65535)"))
+        // Validate local port (0 is allowed for auto-assignment)
+        if (localPort !in 0..MAX_PORT) {
+            return Result.failure(SecurityException("Local port out of valid range (0-65535)"))
         }
         
         // Validate private key path

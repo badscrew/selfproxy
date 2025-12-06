@@ -506,6 +506,17 @@ class AndroidNativeSSHClient(
     fun resetPerformanceMetrics() {
         metricsCollector.reset()
     }
+    
+    /**
+     * Get the SSH process for a given session ID.
+     * This is used by the VPN service to monitor the process.
+     * 
+     * @param sessionId The session ID
+     * @return The Process object, or null if session not found or process not available
+     */
+    fun getProcess(sessionId: String): Process? {
+        return activeSessions[sessionId]?.process
+    }
 }
 
 /**

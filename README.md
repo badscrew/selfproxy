@@ -56,16 +56,25 @@ ssh-tunnel-proxy/
 - **DI**: Hilt for dependency injection
 - **UI**: Jetpack Compose with Material Design 3
 
-### Native SSH Client
+### SSH Implementation
 
-The app uses native OpenSSH binaries compiled for Android to provide reliable SSH connections:
+The app supports two SSH implementations:
 
-- **OpenSSH**: Version 9.6p1+ from Termux project
-- **OpenSSL**: Version 3.2.0+ for cryptography
-- **Architectures**: ARM64, ARM32, x86_64, x86
-- **Fallback**: Automatic fallback to sshj if native SSH unavailable
+1. **SSHJ (Default)**: Pure Java SSH library that works on all Android devices
+   - ✅ Works on all devices without special permissions
+   - ✅ Reliable and well-tested
+   - ✅ Smaller APK size
+   - Recommended for production use
 
-For setup instructions, see [NATIVE_SSH_SETUP.md](NATIVE_SSH_SETUP.md).
+2. **Native OpenSSH (Experimental)**: Native OpenSSH binaries
+   - ❌ **Blocked by Android SELinux on non-rooted devices**
+   - ✅ Would provide better performance (if it could run)
+   - ✅ Full OpenSSH compatibility
+   - ⚠️ Requires root access or custom ROM
+
+**Important**: Native SSH cannot execute on standard Android devices due to SELinux restrictions. See [docs/NATIVE_SSH_LIMITATIONS.md](docs/NATIVE_SSH_LIMITATIONS.md) for details.
+
+For native SSH setup instructions (rooted devices only), see [NATIVE_SSH_SETUP.md](NATIVE_SSH_SETUP.md).
 
 ## Building the Project
 
