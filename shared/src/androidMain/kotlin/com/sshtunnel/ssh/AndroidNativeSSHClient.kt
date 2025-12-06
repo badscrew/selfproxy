@@ -43,6 +43,12 @@ class AndroidNativeSSHClient(
     // Process output flow
     private val _processOutput = MutableStateFlow<String>("")
     
+    // SSH diagnostics collector
+    private val diagnostics = SSHDiagnostics(context, logger)
+    
+    // Recent SSH events for diagnostics
+    private val recentEvents = mutableListOf<SSHEvent>()
+    
     override suspend fun connect(
         profile: ServerProfile,
         privateKey: PrivateKey,
@@ -52,7 +58,12 @@ class AndroidNativeSSHClient(
         strictHostKeyChecking: Boolean
     ): Result<SSHSession> = withContext(Dispatchers.IO) {
         try {
-            logger.info(TAG, "Starting native SSH connection to ${profile.hostname}:${profile.port} as ${profile.username}")
+            logger.info(TAG, "=== Starting Native SSH Connection ===")
+            logger.info(TAG, "Server: ${profile.username}@${profile.hostname}:${profile.port}")
+            logger.info(TAG, "Key Type: ${privateKey.keyType}")
+            logger.info(TAG, "Timeout: ${connectionTimeout.inWholeSeconds}s")
+            logger.info(TAG, "Compression: $enableCompression")
+            logger.info(TAG, "Strict Host Key Checking: $strictHostKeyChecking")
             
             // Detect device architecture
             val architecture = binaryManager.detectArchitecture()
@@ -116,7 +127,8 @@ class AndroidNativeSSHClient(
                 nativeSession = session
             )
             
-            logger.info(TAG, "Native SSH session created successfully")
+            logger.info(TAG, "=== Native SSH Session Created Successfully ===")
+            logger.info(TAG, "Session ID: $sessionId")
             Result.success(sshSession)
             
         } catch (e: Exception) {
@@ -160,7 +172,8 @@ class AndroidNativeSSHClient(
                 )
             }
             
-            logger.info(TAG, "SSH process started successfully")
+            logger.info(TAG, "=== SSH Process Started Successfully ===")
+            logger.info(TAG, "SOCKS5 Port: $localPort")
             
             // Update session with process
             val updatedSession = nativeSession.copy(
@@ -170,12 +183,14 @@ class AndroidNativeSSHClient(
             activeSessions[session.sessionId] = updatedSession
             
             // Start monitoring process output
+            logger.debug(TAG, "Starting process output monitoring")
             monitorProcessOutput(process)
             
             // Start monitoring connection health
+            logger.debug(TAG, "Starting connection health monitoring")
             monitorConnectionHealth(session.sessionId, process, localPort)
             
-            logger.info(TAG, "Port forwarding created on port $localPort")
+            logger.info(TAG, "=== Port Forwarding Established ===")
             Result.success(localPort)
             
         } catch (e: Exception) {
@@ -221,7 +236,8 @@ class AndroidNativeSSHClient(
     
     override suspend fun disconnect(session: SSHSession): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            logger.info(TAG, "Disconnecting native SSH session ${session.sessionId}")
+            logger.info(TAG, "=== Disconnecting Native SSH Session ===")
+            logger.info(TAG, "Session ID: ${session.sessionId}")
             
             val nativeSession = activeSessions[session.sessionId]
                 ?: return@withContext Result.success(Unit).also {
@@ -244,7 +260,7 @@ class AndroidNativeSSHClient(
             // Remove session from tracking
             activeSessions.remove(session.sessionId)
             
-            logger.info(TAG, "Native SSH session disconnected successfully")
+            logger.info(TAG, "=== Native SSH Session Disconnected Successfully ===")
             Result.success(Unit)
             
         } catch (e: Exception) {
@@ -274,13 +290,116 @@ class AndroidNativeSSHClient(
     fun observeProcessOutput(): Flow<String> = _processOutput.asStateFlow()
     
     /**
+     * Collect diagnostic information for troubleshooting.
+     * 
+     * @param sessionId Session ID to collect diagnostics for
+     * @return Diagnostic report or null if session not found
+     */
+    suspend fun collectDiagnostics(sessionId: String): DiagnosticReport? {
+        val session = activeSessions[sessionId] ?: return null
+        
+        return diagnostics.collectDiagnostics(
+            profile = session.profile,
+            binaryPath = session.binaryPath,
+            recentEvents = synchronized(recentEvents) { recentEvents.toList() }
+        )
+    }
+    
+    /**
+     * Get formatted diagnostic report as text.
+     * 
+     * @param sessionId Session ID to collect diagnostics for
+     * @return Formatted diagnostic report or null if session not found
+     */
+    suspend fun getDiagnosticReport(sessionId: String): String? {
+        val report = collectDiagnostics(sessionId) ?: return null
+        return diagnostics.formatReport(report)
+    }
+    
+    /**
      * Monitor process output and emit to flow.
+     * Parses SSH output to extract structured events and logs them appropriately.
      */
     private fun monitorProcessOutput(process: Process) {
         CoroutineScope(Dispatchers.IO).launch {
             processManager.monitorOutput(process).collect { line ->
-                logger.verbose(TAG, "SSH output: $line")
+                // Parse the output line
+                val event = SSHOutputParser.parseLine(line)
+                
+                if (event != null) {
+                    // Log structured event
+                    logSSHEvent(event)
+                    
+                    // Track event for diagnostics
+                    synchronized(recentEvents) {
+                        recentEvents.add(event)
+                        // Keep only last 50 events
+                        if (recentEvents.size > 50) {
+                            recentEvents.removeAt(0)
+                        }
+                    }
+                } else {
+                    // Log raw output at verbose level
+                    logger.verbose(TAG, "SSH output: $line")
+                }
+                
+                // Emit to flow for external monitoring
                 _processOutput.value = line
+            }
+        }
+    }
+    
+    /**
+     * Log SSH event with appropriate severity level.
+     */
+    private fun logSSHEvent(event: SSHEvent) {
+        when (event) {
+            is SSHEvent.Connecting -> {
+                logger.info(TAG, "Connecting to ${event.target}")
+            }
+            is SSHEvent.Connected -> {
+                logger.info(TAG, "SSH connection established")
+            }
+            is SSHEvent.Disconnected -> {
+                logger.info(TAG, "SSH connection closed: ${event.reason}")
+            }
+            is SSHEvent.Authenticating -> {
+                logger.info(TAG, "Authenticating with server")
+            }
+            is SSHEvent.AuthenticationSuccess -> {
+                logger.info(TAG, "Authentication successful")
+            }
+            is SSHEvent.AuthenticationFailure -> {
+                logger.error(TAG, "Authentication failed: ${event.reason}")
+            }
+            is SSHEvent.KeyExchange -> {
+                logger.debug(TAG, "Key exchange: ${event.algorithm}")
+            }
+            is SSHEvent.PortForwardingEstablished -> {
+                logger.info(TAG, "Port forwarding established on port ${event.port}")
+            }
+            is SSHEvent.PortForwardingFailed -> {
+                logger.error(TAG, "Port forwarding failed: ${event.reason}")
+            }
+            is SSHEvent.KeepAlive -> {
+                logger.verbose(TAG, "Keep-alive packet sent")
+            }
+            is SSHEvent.Error -> {
+                val severity = SSHOutputParser.categorizeError(event.message)
+                when (severity) {
+                    ErrorSeverity.FATAL, ErrorSeverity.CRITICAL -> {
+                        logger.error(TAG, "SSH error: ${event.message}")
+                    }
+                    ErrorSeverity.ERROR -> {
+                        logger.warn(TAG, "SSH error: ${event.message}")
+                    }
+                    ErrorSeverity.WARNING -> {
+                        logger.debug(TAG, "SSH warning: ${event.message}")
+                    }
+                }
+            }
+            is SSHEvent.Warning -> {
+                logger.warn(TAG, "SSH warning: ${event.message}")
             }
         }
     }
@@ -290,22 +409,35 @@ class AndroidNativeSSHClient(
      */
     private fun monitorConnectionHealth(sessionId: String, process: Process, socksPort: Int) {
         CoroutineScope(Dispatchers.IO).launch {
+            var lastState: ConnectionHealthState? = null
+            
             connectionMonitor.monitorConnection(process, socksPort).collect { state ->
-                when (state) {
-                    is ConnectionHealthState.Healthy -> {
-                        logger.verbose(TAG, "Connection health: Healthy")
-                    }
-                    is ConnectionHealthState.Disconnected -> {
-                        logger.warn(TAG, "Connection health: Disconnected")
-                        // Clean up session
-                        activeSessions[sessionId]?.let { session ->
-                            privateKeyManager.deletePrivateKey(session.profile.id)
-                            activeSessions.remove(sessionId)
+                // Only log state changes to reduce noise
+                val stateChanged = lastState == null || state::class != lastState!!::class
+                if (stateChanged) {
+                    when (state) {
+                        is ConnectionHealthState.Healthy -> {
+                            logger.info(TAG, "Connection Status: Healthy")
+                        }
+                        is ConnectionHealthState.Disconnected -> {
+                            logger.warn(TAG, "Connection Status: Disconnected")
+                            logger.info(TAG, "Cleaning up session resources")
+                            
+                            // Clean up session
+                            activeSessions[sessionId]?.let { session ->
+                                privateKeyManager.deletePrivateKey(session.profile.id)
+                                activeSessions.remove(sessionId)
+                                logger.debug(TAG, "Session cleanup completed")
+                            }
+                        }
+                        is ConnectionHealthState.Unhealthy -> {
+                            logger.warn(TAG, "Connection Status: Unhealthy - ${state.message}")
                         }
                     }
-                    is ConnectionHealthState.Unhealthy -> {
-                        logger.warn(TAG, "Connection health: Unhealthy - ${state.message}")
-                    }
+                    lastState = state
+                } else {
+                    // Log at verbose level for repeated states
+                    logger.verbose(TAG, "Connection health check: ${state::class.simpleName}")
                 }
             }
         }
