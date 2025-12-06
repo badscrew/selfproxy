@@ -25,7 +25,8 @@
   - Clean up unused imports and references
   - _Requirements: 11.1, 11.2_
 
-- [-] 3. Define shared data models and enums
+- [x] 3. Define shared data models and enums
+
 
 
 
@@ -37,7 +38,8 @@
   - Add @Serializable annotations for all data classes
   - _Requirements: 1.1, 9.1, 9.2, 9.3_
 
-- [-] 3.1 Write property test for ServerProfile serialization
+- [x] 3.1 Write property test for ServerProfile serialization
+
 
   - **Property 1: Profile CRUD operations maintain data integrity**
   - **Validates: Requirements 1.1, 1.2, 1.3**
