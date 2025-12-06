@@ -324,7 +324,9 @@ class TunnelVpnService : VpnService() {
             // Disconnect SSH session
             val session = sshSession
             if (session != null) {
-                sshClient?.disconnect(session)
+                serviceScope.launch {
+                    sshClient?.disconnect(session)
+                }
                 sshSession = null
                 android.util.Log.d(TAG, "SSH session disconnected")
             }
