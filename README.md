@@ -122,13 +122,42 @@ This project follows the official Kotlin coding conventions. Run the linter with
 ./gradlew ktlintCheck
 ```
 
-## SOCKS5 Server Requirements
+## Server Setup
 
-For full functionality including video calling support, your SSH server must support SOCKS5 UDP ASSOCIATE (RFC 1928).
+This app is being migrated from SSH-based tunneling to Shadowsocks for improved performance and simplicity.
 
-### Supported SSH Servers
+### Shadowsocks Server Setup (Recommended)
 
-✅ **OpenSSH** (recommended)
+For the best experience, set up a Shadowsocks server. We provide comprehensive documentation and an automated installation script:
+
+📖 **[Complete Shadowsocks Server Setup Guide](docs/SHADOWSOCKS_SERVER_SETUP.md)**
+
+**Quick Setup (Ubuntu):**
+```bash
+# Download and run the automated installation script
+wget https://raw.githubusercontent.com/your-repo/ssh-tunnel-proxy/main/scripts/install-shadowsocks.sh
+chmod +x install-shadowsocks.sh
+sudo ./install-shadowsocks.sh
+```
+
+The script will:
+- Install shadowsocks-libev with secure defaults
+- Generate a strong random password
+- Configure recommended cipher (chacha20-ietf-poly1305)
+- Set up firewall rules automatically
+- Enable and start the service
+- Display your connection details
+
+**Supported Ciphers:**
+- `chacha20-ietf-poly1305` (recommended for mobile)
+- `aes-256-gcm` (recommended for servers with AES-NI)
+- `aes-128-gcm` (fastest)
+
+### Legacy SSH Server Support
+
+The app still supports SSH-based tunneling, though this is being phased out:
+
+✅ **OpenSSH**
 - Enable dynamic port forwarding: `ssh -D 1080 user@server`
 - Supports UDP ASSOCIATE by default
 - Most widely used and tested
@@ -136,10 +165,6 @@ For full functionality including video calling support, your SSH server must sup
 ✅ **Dante SOCKS Server**
 - Full SOCKS5 implementation with UDP support
 - Highly configurable
-
-✅ **Shadowsocks**
-- Supports UDP relay
-- Good for high-latency connections
 
 ### Testing Your Server
 
