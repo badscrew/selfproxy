@@ -2,12 +2,11 @@ package com.sshtunnel.android.ui.screens.connection
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sshtunnel.connection.ConnectionManager
+import com.sshtunnel.data.ConnectionState
 import com.sshtunnel.data.ServerProfile
+import com.sshtunnel.data.VpnStatistics
 import com.sshtunnel.repository.ProfileRepository
-import com.sshtunnel.ssh.Connection
-import com.sshtunnel.ssh.ConnectionError
-import com.sshtunnel.ssh.ConnectionState
-import com.sshtunnel.ssh.SSHConnectionManager
 import com.sshtunnel.testing.ConnectionTestResult
 import com.sshtunnel.testing.ConnectionTestService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,13 +18,13 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for managing SSH connection state and operations.
+ * ViewModel for managing Shadowsocks connection state and operations.
  * 
- * Handles connection lifecycle, state observation, and connection testing.
+ * Handles connection lifecycle, state observation, statistics, and connection testing.
  */
 @HiltViewModel
 class ConnectionViewModel @Inject constructor(
-    private val connectionManager: SSHConnectionManager,
+    private val connectionManager: ConnectionManager,
     private val connectionTestService: ConnectionTestService,
     private val profileRepository: ProfileRepository,
     private val logger: com.sshtunnel.logging.Logger,
@@ -41,9 +40,10 @@ class ConnectionViewModel @Inject constructor(
     private val _vpnPermissionNeeded = MutableStateFlow(false)
     val vpnPermissionNeeded: StateFlow<Boolean> = _vpnPermissionNeeded.asStateFlow()
     
+    private val _statistics = MutableStateFlow(VpnStatistics())
+    val statistics: StateFlow<VpnStatistics> = _statistics.asStateFlow()
+    
     private var currentProfile: ServerProfile? = null
-    private var isVpnActive = false
-    private var pendingConnection: Connection? = null
     
     companion object {
         private const val TAG = "ConnectionViewModel"
@@ -51,21 +51,11 @@ class ConnectionViewModel @Inject constructor(
     
     /**
      * Called when VPN permission is granted by the user.
-     * Auto-retries VPN start if there's a pending connection.
      */
     fun onVpnPermissionGranted() {
         logger.info(TAG, "VPN permission granted")
         _vpnPermissionNeeded.value = false
-        
-        // Auto-retry: If we have a pending connection waiting for VPN, retry VPN start
-        pendingConnection?.let { connection ->
-            logger.info(TAG, "Auto-retrying VPN start after permission granted")
-            // Update UI to show we're waiting for VPN
-            _uiState.value = ConnectionUiState.WaitingForVpn(connection, currentProfile)
-            // Get VpnController from Application and retry starting VPN
-            val app = context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp
-            app.vpnController.retryVpnStart()
-        }
+        // Connection will proceed automatically
     }
     
     /**
@@ -74,46 +64,8 @@ class ConnectionViewModel @Inject constructor(
     fun onVpnPermissionDenied() {
         logger.info(TAG, "VPN permission denied")
         _vpnPermissionNeeded.value = false
-        
-        // Disconnect SSH since VPN won't work without permission
-        pendingConnection?.let {
-            logger.warn(TAG, "VPN permission denied, disconnecting SSH")
-            disconnect()
-        }
-    }
-    
-    /**
-     * Called when VPN service starts successfully.
-     */
-    fun onVpnStarted() {
-        logger.info(TAG, "VPN started successfully")
-        isVpnActive = true
-        
-        // Update UI to show fully connected state
-        pendingConnection?.let { connection ->
-            _uiState.value = ConnectionUiState.Connected(connection, currentProfile)
-            pendingConnection = null
-        }
-    }
-    
-    /**
-     * Called when VPN service stops.
-     */
-    fun onVpnStopped() {
-        logger.info(TAG, "VPN stopped")
-        isVpnActive = false
-    }
-    
-    /**
-     * Called when VPN encounters an error.
-     */
-    fun onVpnError(errorMessage: String) {
-        logger.error(TAG, "VPN error: $errorMessage")
-        isVpnActive = false
-        
-        // Show error and disconnect
         _uiState.value = ConnectionUiState.Error(
-            "VPN failed: $errorMessage",
+            "VPN permission is required to establish a secure tunnel",
             null
         )
     }
@@ -127,16 +79,10 @@ class ConnectionViewModel @Inject constructor(
             }
         }
         
-        // Observe VPN state changes
+        // Observe statistics updates
         viewModelScope.launch {
-            val app = context.applicationContext as com.sshtunnel.android.SSHTunnelProxyApp
-            app.vpnController.vpnActiveState.collect { isActive ->
-                logger.info(TAG, "VPN state changed: ${if (isActive) "Active" else "Inactive"}")
-                if (isActive) {
-                    onVpnStarted()
-                } else {
-                    onVpnStopped()
-                }
+            connectionManager.observeStatistics().collect { stats ->
+                _statistics.value = stats
             }
         }
     }
@@ -166,7 +112,7 @@ class ConnectionViewModel @Inject constructor(
     }
     
     /**
-     * Connects to the SSH server using the current profile.
+     * Connects to the Shadowsocks server using the current profile.
      */
     fun connect() {
         val profile = currentProfile
@@ -185,8 +131,9 @@ class ConnectionViewModel @Inject constructor(
         _vpnPermissionNeeded.value = true
         
         viewModelScope.launch {
-            // Clear any previous test results
+            // Clear any previous test results and statistics
             _testResult.value = TestResultState.None
+            _statistics.value = VpnStatistics()
             
             val result = connectionManager.connect(profile)
             result.onFailure { error ->
@@ -201,13 +148,14 @@ class ConnectionViewModel @Inject constructor(
     }
     
     /**
-     * Disconnects the current SSH connection.
+     * Disconnects the current Shadowsocks connection.
      */
     fun disconnect() {
         logger.info(TAG, "User initiated disconnect")
         viewModelScope.launch {
-            // Clear test results
+            // Clear test results and statistics
             _testResult.value = TestResultState.None
+            _statistics.value = VpnStatistics()
             
             val result = connectionManager.disconnect()
             result.onFailure { error ->
@@ -255,15 +203,12 @@ class ConnectionViewModel @Inject constructor(
     
     /**
      * Updates UI state based on connection manager state.
-     * Only shows "Connected" when both SSH and VPN are active.
      */
     private fun updateUiState(state: ConnectionState) {
         logger.verbose(TAG, "Connection state changed: ${state::class.simpleName}")
         _uiState.value = when (state) {
             is ConnectionState.Disconnected -> {
                 logger.info(TAG, "UI state updated to Disconnected")
-                isVpnActive = false
-                pendingConnection = null
                 ConnectionUiState.Disconnected
             }
             is ConnectionState.Connecting -> {
@@ -271,23 +216,26 @@ class ConnectionViewModel @Inject constructor(
                 ConnectionUiState.Connecting(currentProfile)
             }
             is ConnectionState.Connected -> {
-                logger.info(TAG, "SSH connected (SOCKS port: ${state.connection.socksPort}), waiting for VPN")
-                // SSH is connected, but we need to wait for VPN to start
-                pendingConnection = state.connection
-                
-                // Don't show "Connected" yet - wait for VPN to start
-                ConnectionUiState.WaitingForVpn(
-                    connection = state.connection,
+                logger.info(TAG, "UI state updated to Connected (profile: ${state.profileId})")
+                ConnectionUiState.Connected(
+                    profileId = state.profileId,
+                    serverAddress = state.serverAddress,
+                    connectedAt = state.connectedAt,
+                    profile = currentProfile
+                )
+            }
+            is ConnectionState.Reconnecting -> {
+                logger.info(TAG, "UI state updated to Reconnecting (attempt ${state.attempt})")
+                ConnectionUiState.Reconnecting(
+                    attempt = state.attempt,
                     profile = currentProfile
                 )
             }
             is ConnectionState.Error -> {
-                logger.error(TAG, "UI state updated to Error: ${state.error.message}")
-                isVpnActive = false
-                pendingConnection = null
+                logger.error(TAG, "UI state updated to Error: ${state.message}")
                 ConnectionUiState.Error(
-                    message = state.error.message,
-                    error = state.error
+                    message = state.message,
+                    cause = state.cause
                 )
             }
         }
@@ -296,101 +244,84 @@ class ConnectionViewModel @Inject constructor(
     /**
      * Formats a connection error into a user-friendly message with suggestions.
      */
-    fun getErrorDetails(error: ConnectionError?): ErrorDetails {
-        return when (error) {
-            is ConnectionError.AuthenticationFailed -> ErrorDetails(
+    fun getErrorDetails(message: String, cause: Throwable?): ErrorDetails {
+        // Analyze error message to provide specific suggestions
+        val lowerMessage = message.lowercase()
+        
+        return when {
+            "authentication" in lowerMessage || "password" in lowerMessage -> ErrorDetails(
                 title = "Authentication Failed",
-                message = error.message,
+                message = message,
                 suggestions = listOf(
-                    "Verify your username is correct",
-                    "Ensure your SSH key is authorized on the server (check ~/.ssh/authorized_keys)",
-                    "Check that the key format matches what the server expects",
-                    "Verify the key file is not corrupted"
+                    "Verify your Shadowsocks password is correct",
+                    "Check that the server is configured with the same password",
+                    "Ensure the cipher method matches the server configuration",
+                    "Try re-entering the password in the profile settings"
                 )
             )
-            is ConnectionError.ConnectionTimeout -> ErrorDetails(
+            "timeout" in lowerMessage -> ErrorDetails(
                 title = "Connection Timeout",
-                message = error.message,
+                message = message,
                 suggestions = listOf(
                     "Check your internet connection (WiFi or mobile data)",
                     "Verify the server is online and accessible",
-                    "Check if a firewall is blocking SSH connections (port 22 or custom port)",
-                    "Try increasing the connection timeout in settings",
-                    "Verify the server address and port are correct"
+                    "Check if a firewall is blocking the connection",
+                    "Verify the server address and port are correct",
+                    "Try increasing the connection timeout"
                 )
             )
-            is ConnectionError.HostUnreachable -> ErrorDetails(
-                title = "Host Unreachable",
-                message = error.message,
+            "unreachable" in lowerMessage || "host" in lowerMessage -> ErrorDetails(
+                title = "Server Unreachable",
+                message = message,
                 suggestions = listOf(
                     "Verify the hostname or IP address is correct",
                     "Check your internet connection",
                     "Ensure the server is online and accessible",
-                    "Verify the port number (default SSH port is 22)",
+                    "Verify the port number is correct",
                     "Check if a firewall is blocking the connection"
                 )
             )
-            is ConnectionError.PortForwardingDisabled -> ErrorDetails(
-                title = "Port Forwarding Disabled",
-                message = error.message,
+            "cipher" in lowerMessage || "encryption" in lowerMessage -> ErrorDetails(
+                title = "Encryption Error",
+                message = message,
                 suggestions = listOf(
-                    "Contact your server administrator to enable port forwarding",
-                    "Ask them to add 'AllowTcpForwarding yes' to /etc/ssh/sshd_config",
-                    "After changes, the SSH service needs to be restarted",
-                    "Try a different SSH server that supports port forwarding"
+                    "Verify the cipher method matches the server configuration",
+                    "Try a different cipher method (aes-256-gcm, chacha20-ietf-poly1305)",
+                    "Check that the server supports the selected cipher",
+                    "Update the server to support modern AEAD ciphers"
                 )
             )
-            is ConnectionError.InvalidKey -> ErrorDetails(
-                title = "Invalid SSH Key",
-                message = error.message,
-                suggestions = listOf(
-                    "Verify the key file is not corrupted",
-                    "Ensure the key is in a supported format (RSA, ECDSA, or Ed25519)",
-                    "If passphrase-protected, verify the passphrase is correct",
-                    "Try regenerating the SSH key pair",
-                    "Ensure the key has proper permissions (600 for private key)"
-                )
-            )
-            is ConnectionError.UnknownHost -> ErrorDetails(
-                title = "Unknown Host",
-                message = error.message,
-                suggestions = listOf(
-                    "Check the hostname spelling carefully",
-                    "Verify your DNS is working (try opening a website)",
-                    "Try using an IP address instead of hostname",
-                    "Check if you need to be on a specific network (VPN, corporate network)"
-                )
-            )
-            is ConnectionError.NetworkUnavailable -> ErrorDetails(
-                title = "Network Unavailable",
-                message = error.message,
+            "network" in lowerMessage -> ErrorDetails(
+                title = "Network Error",
+                message = message,
                 suggestions = listOf(
                     "Check your WiFi or mobile data connection",
                     "Try switching between WiFi and mobile data",
-                    "Verify you have internet access (try opening a website)",
-                    "If on a restricted network, it may be blocking SSH connections",
-                    "Check if airplane mode is enabled"
+                    "Verify you have internet access",
+                    "Check if airplane mode is enabled",
+                    "If on a restricted network, it may be blocking connections"
                 )
             )
-            is ConnectionError.CredentialError -> ErrorDetails(
-                title = "Credential Error",
-                message = error.message,
+            "vpn" in lowerMessage || "permission" in lowerMessage -> ErrorDetails(
+                title = "VPN Error",
+                message = message,
                 suggestions = listOf(
-                    "Try editing the profile and re-selecting the SSH key",
-                    "Check that the key file still exists on your device",
-                    "Verify the app has permission to access the key file",
-                    "Try creating a new profile with the same settings"
+                    "Grant VPN permission when prompted",
+                    "Check that another VPN is not already active",
+                    "Try restarting the app",
+                    "Check Android VPN settings",
+                    "Ensure the app has necessary permissions"
                 )
             )
-            is ConnectionError.Unknown, null -> ErrorDetails(
+            else -> ErrorDetails(
                 title = "Connection Error",
-                message = error?.message ?: "An unknown error occurred while connecting to the SSH server.",
+                message = message,
                 suggestions = listOf(
                     "Check your internet connection",
                     "Verify all profile settings are correct",
                     "Try disconnecting and reconnecting",
-                    "Enable verbose logging in settings for more details",
-                    "Check the diagnostic logs for technical information"
+                    "Check that the Shadowsocks server is running",
+                    "Verify server address, port, password, and cipher are correct"
                 )
             )
         }
@@ -414,24 +345,28 @@ sealed class ConnectionUiState {
     data class Connecting(val profile: ServerProfile?) : ConnectionUiState()
     
     /**
-     * SSH tunnel established, waiting for VPN to start.
+     * Connection is being re-established after a failure.
      * 
-     * @property connection The SSH connection details
-     * @property profile The profile used for this connection
+     * @property attempt The reconnection attempt number
+     * @property profile The profile being reconnected to
      */
-    data class WaitingForVpn(
-        val connection: Connection,
+    data class Reconnecting(
+        val attempt: Int,
         val profile: ServerProfile?
     ) : ConnectionUiState()
     
     /**
-     * Connection is fully active (both SSH and VPN).
+     * Connection is fully active.
      * 
-     * @property connection The active connection details
+     * @property profileId The ID of the connected profile
+     * @property serverAddress The server address
+     * @property connectedAt The connection timestamp
      * @property profile The profile used for this connection
      */
     data class Connected(
-        val connection: Connection,
+        val profileId: Long,
+        val serverAddress: String,
+        val connectedAt: kotlinx.datetime.Instant,
         val profile: ServerProfile?
     ) : ConnectionUiState()
     
@@ -439,11 +374,11 @@ sealed class ConnectionUiState {
      * Connection failed or encountered an error.
      * 
      * @property message User-friendly error message
-     * @property error The detailed error object
+     * @property cause The error cause
      */
     data class Error(
         val message: String,
-        val error: ConnectionError?
+        val cause: Throwable?
     ) : ConnectionUiState()
 }
 

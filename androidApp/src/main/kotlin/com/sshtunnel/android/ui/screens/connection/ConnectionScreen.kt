@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,13 +20,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sshtunnel.data.ServerProfile
-import com.sshtunnel.ssh.Connection
+import com.sshtunnel.data.VpnStatistics
 import com.sshtunnel.testing.ConnectionTestResult
 import kotlin.time.Duration
 
 /**
  * Connection screen - displays connection status and controls.
- * Shows current profile info, connection state, and connect/disconnect button.
+ * Shows current profile info, connection state, statistics, and connect/disconnect button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +39,7 @@ fun ConnectionScreen(
     val uiState by viewModel.uiState.collectAsState()
     val testResult by viewModel.testResult.collectAsState()
     val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsState()
+    val statistics by viewModel.statistics.collectAsState()
     
     val context = androidx.compose.ui.platform.LocalContext.current
     
@@ -68,38 +70,6 @@ fun ConnectionScreen(
     // Set profile if provided
     LaunchedEffect(profileId) {
         profileId?.let { viewModel.setProfile(it) }
-    }
-    
-    // Listen for VPN state broadcasts
-    DisposableEffect(Unit) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-                when (intent?.action) {
-                    "com.sshtunnel.android.vpn.STARTED" -> {
-                        viewModel.onVpnStarted()
-                    }
-                    "com.sshtunnel.android.vpn.STOPPED" -> {
-                        viewModel.onVpnStopped()
-                    }
-                    "com.sshtunnel.android.vpn.ERROR" -> {
-                        val errorMessage = intent.getStringExtra("error_message") ?: "Unknown VPN error"
-                        viewModel.onVpnError(errorMessage)
-                    }
-                }
-            }
-        }
-        
-        val filter = android.content.IntentFilter().apply {
-            addAction("com.sshtunnel.android.vpn.STARTED")
-            addAction("com.sshtunnel.android.vpn.STOPPED")
-            addAction("com.sshtunnel.android.vpn.ERROR")
-        }
-        
-        context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
     }
     
     Scaffold(
@@ -138,9 +108,9 @@ fun ConnectionScreen(
                     )
                 }
                 
-                is ConnectionUiState.WaitingForVpn -> {
-                    WaitingForVpnContent(
-                        connection = state.connection,
+                is ConnectionUiState.Reconnecting -> {
+                    ReconnectingContent(
+                        attempt = state.attempt,
                         profile = state.profile,
                         onDisconnect = { viewModel.disconnect() }
                     )
@@ -148,8 +118,11 @@ fun ConnectionScreen(
                 
                 is ConnectionUiState.Connected -> {
                     ConnectedContent(
-                        connection = state.connection,
+                        profileId = state.profileId,
+                        serverAddress = state.serverAddress,
+                        connectedAt = state.connectedAt,
                         profile = state.profile,
+                        statistics = statistics,
                         testResult = testResult,
                         onDisconnect = { viewModel.disconnect() },
                         onTestConnection = { viewModel.testConnection() },
@@ -161,7 +134,7 @@ fun ConnectionScreen(
                 is ConnectionUiState.Error -> {
                     ErrorContent(
                         message = state.message,
-                        errorDetails = viewModel.getErrorDetails(state.error),
+                        errorDetails = viewModel.getErrorDetails(state.message, state.cause),
                         onRetry = { viewModel.connect() },
                         onBack = {
                             viewModel.clearError()
@@ -251,7 +224,7 @@ private fun ConnectingContent(
         
         profile?.let {
             Text(
-                text = "to ${it.username}@${it.hostname}:${it.port}",
+                text = "to ${it.serverHost}:${it.serverPort}",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -261,11 +234,11 @@ private fun ConnectingContent(
 }
 
 /**
- * Content shown while waiting for VPN to start.
+ * Content shown while reconnecting.
  */
 @Composable
-private fun WaitingForVpnContent(
-    connection: Connection,
+private fun ReconnectingContent(
+    attempt: Int,
     profile: ServerProfile?,
     onDisconnect: () -> Unit
 ) {
@@ -281,13 +254,13 @@ private fun WaitingForVpnContent(
         )
         
         Text(
-            text = "Starting VPN...",
+            text = "Reconnecting...",
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
         
         Text(
-            text = "SSH tunnel established, activating VPN",
+            text = "Attempt $attempt",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -295,7 +268,7 @@ private fun WaitingForVpnContent(
         
         profile?.let {
             Text(
-                text = "${it.username}@${it.hostname}:${it.port}",
+                text = "${it.serverHost}:${it.serverPort}",
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -318,8 +291,11 @@ private fun WaitingForVpnContent(
  */
 @Composable
 private fun ConnectedContent(
-    connection: Connection,
+    profileId: Long,
+    serverAddress: String,
+    connectedAt: kotlinx.datetime.Instant,
     profile: ServerProfile?,
+    statistics: VpnStatistics,
     testResult: TestResultState,
     onDisconnect: () -> Unit,
     onTestConnection: () -> Unit,
@@ -348,47 +324,13 @@ private fun ConnectedContent(
         )
         
         profile?.let {
-            ProfileInfoCard(profile = it)
+            ProfileInfoCard(profile = it, serverAddress = serverAddress)
         }
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        ProxyInfoCard(
-            socksPort = connection.socksPort,
-            serverAddress = "${connection.username}@${connection.serverAddress}:${connection.serverPort}"
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // SOCKS5 Test button
-        var showSocksTest by remember { mutableStateOf(false) }
-        
-        OutlinedButton(
-            onClick = { showSocksTest = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Test SOCKS5 Proxy")
-        }
-        
-        // Show test dialog
-        if (showSocksTest) {
-            androidx.compose.ui.window.Dialog(
-                onDismissRequest = { showSocksTest = false }
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.9f),
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = 8.dp
-                ) {
-                    com.sshtunnel.android.testing.SocksTestScreen(
-                        socksPort = connection.socksPort,
-                        onBack = { showSocksTest = false }
-                    )
-                }
-            }
-        }
+        // Statistics card
+        StatisticsCard(statistics = statistics)
         
         Spacer(modifier = Modifier.height(8.dp))
         
@@ -537,7 +479,7 @@ private fun ErrorContent(
  * Card displaying profile information.
  */
 @Composable
-private fun ProfileInfoCard(profile: ServerProfile) {
+private fun ProfileInfoCard(profile: ServerProfile, serverAddress: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -557,25 +499,22 @@ private fun ProfileInfoCard(profile: ServerProfile) {
             
             InfoRow(
                 label = "Server",
-                value = "${profile.username}@${profile.hostname}:${profile.port}"
+                value = serverAddress
             )
             
             InfoRow(
-                label = "Key Type",
-                value = profile.keyType.name
+                label = "Cipher",
+                value = profile.cipher.name.replace("_", "-").lowercase()
             )
         }
     }
 }
 
 /**
- * Displays SOCKS5 proxy information when connected.
+ * Displays real-time VPN statistics.
  */
 @Composable
-private fun ProxyInfoCard(
-    socksPort: Int,
-    serverAddress: String
-) {
+private fun StatisticsCard(statistics: VpnStatistics) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -592,12 +531,12 @@ private fun ProxyInfoCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = "Info",
+                    contentDescription = "Statistics",
                     tint = MaterialTheme.colorScheme.secondary
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "SOCKS5 Proxy Information",
+                    text = "Connection Statistics",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -609,24 +548,54 @@ private fun ProxyInfoCard(
             
             Spacer(modifier = Modifier.height(12.dp))
             
+            // Duration
             InfoRow(
-                label = "Proxy Address",
-                value = "127.0.0.1:$socksPort"
+                label = "Duration",
+                value = formatDuration(statistics.connectedDuration)
             )
             
             Spacer(modifier = Modifier.height(8.dp))
             
+            // Upload
             InfoRow(
-                label = "Server",
-                value = serverAddress
+                label = "Uploaded",
+                value = statistics.formatBytes(statistics.bytesSent)
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Download
+            InfoRow(
+                label = "Downloaded",
+                value = statistics.formatBytes(statistics.bytesReceived)
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Total
+            InfoRow(
+                label = "Total",
+                value = statistics.formatBytes(statistics.totalBytes)
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            Text(
-                text = "Configure apps to use this SOCKS5 proxy for manual routing.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+            Divider()
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Upload speed
+            InfoRow(
+                label = "Upload Speed",
+                value = statistics.formatSpeed(statistics.uploadSpeed)
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Download speed
+            InfoRow(
+                label = "Download Speed",
+                value = statistics.formatSpeed(statistics.downloadSpeed)
             )
         }
     }
