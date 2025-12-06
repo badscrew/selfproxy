@@ -1,74 +1,39 @@
 package com.sshtunnel.storage
 
-import com.sshtunnel.data.KeyType
-
 /**
- * Interface for securely storing and retrieving SSH private keys.
+ * Interface for securely storing and retrieving Shadowsocks passwords.
  * 
  * Platform-specific implementations handle encryption and secure storage
  * using platform-native security features (Android Keystore, iOS Keychain).
  */
 interface CredentialStore {
     /**
-     * Stores an SSH private key securely with encryption.
+     * Stores a Shadowsocks password securely with encryption.
      * 
-     * @param profileId The unique identifier of the profile this key belongs to
-     * @param privateKey The raw private key bytes to store
-     * @param passphrase Optional passphrase for passphrase-protected keys
+     * @param profileId The unique identifier of the profile this password belongs to
+     * @param password The password to store
      * @return Result indicating success or failure of the storage operation
      */
-    suspend fun storeKey(
+    suspend fun storePassword(
         profileId: Long,
-        privateKey: ByteArray,
-        passphrase: String? = null
+        password: String
     ): Result<Unit>
     
     /**
-     * Retrieves and decrypts an SSH private key.
+     * Retrieves and decrypts a Shadowsocks password.
      * 
-     * @param profileId The unique identifier of the profile to retrieve the key for
-     * @param passphrase Optional passphrase for passphrase-protected keys
-     * @return Result containing the decrypted PrivateKey on success, or an error on failure
+     * @param profileId The unique identifier of the profile to retrieve the password for
+     * @return Result containing the decrypted password on success, or an error on failure
      */
-    suspend fun retrieveKey(
-        profileId: Long,
-        passphrase: String? = null
-    ): Result<PrivateKey>
+    suspend fun retrievePassword(
+        profileId: Long
+    ): Result<String>
     
     /**
-     * Deletes a stored SSH private key.
+     * Deletes a stored Shadowsocks password.
      * 
-     * @param profileId The unique identifier of the profile whose key should be deleted
+     * @param profileId The unique identifier of the profile whose password should be deleted
      * @return Result indicating success or failure of the delete operation
      */
-    suspend fun deleteKey(profileId: Long): Result<Unit>
-}
-
-/**
- * Represents a decrypted SSH private key with its type information.
- * 
- * @property keyData The raw private key bytes
- * @property keyType The type of SSH key (RSA, ECDSA, ED25519)
- */
-data class PrivateKey(
-    val keyData: ByteArray,
-    val keyType: KeyType
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other == null || this::class != other::class) return false
-
-        other as PrivateKey
-
-        if (!keyData.contentEquals(other.keyData)) return false
-        if (keyType != other.keyType) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = keyData.contentHashCode()
-        result = 31 * result + keyType.hashCode()
-        return result
-    }
+    suspend fun deletePassword(profileId: Long): Result<Unit>
 }

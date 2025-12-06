@@ -61,6 +61,7 @@
 
 
 
+
   - Update ProfileRepository interface for Shadowsocks fields
   - Implement createProfile with validation
   - Implement getProfile, getAllProfiles, updateProfile, deleteProfile
@@ -80,7 +81,11 @@
   - **Property 3: Profile deletion removes all associated data**
   - **Validates: Requirements 1.4, 2.3**
 
-- [ ] 6. Implement CredentialStore for password encryption
+- [x] 6. Implement CredentialStore for password encryption
+
+
+
+
   - Create CredentialStore interface
   - Implement Android Keystore encryption for passwords
   - Implement storePassword with hardware-backed encryption
@@ -89,7 +94,9 @@
   - Add password sanitization for logging
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 6.1 Write property test for password encryption
+- [x] 6.1 Write property test for password encryption
+
+
   - **Property 2: Password encryption round-trip preserves data**
   - **Validates: Requirements 2.1, 2.2**
 

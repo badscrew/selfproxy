@@ -1,13 +1,14 @@
 package com.sshtunnel.storage
 
 import android.content.Context
-import com.sshtunnel.data.KeyType
+import com.sshtunnel.logging.LogEntry
+import com.sshtunnel.logging.LogLevel
+import com.sshtunnel.logging.Logger
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.*
 import io.kotest.property.checkAll
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Ignore
@@ -20,8 +21,8 @@ import org.robolectric.annotation.Config
 /**
  * Property-based tests for AndroidCredentialStore.
  * 
- * Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
- * Validates: Requirements 3.4, 3.5, 9.1
+ * Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+ * Validates: Requirements 2.1, 2.2
  * 
  * **IMPORTANT: These tests are currently disabled due to Robolectric limitations.**
  * 
@@ -49,149 +50,190 @@ class CredentialStorePropertiesTest {
     
     private lateinit var context: Context
     private lateinit var credentialStore: AndroidCredentialStore
+    private lateinit var testLogger: TestLogger
     
     @Before
     fun setup() {
         context = RuntimeEnvironment.getApplication()
-        credentialStore = AndroidCredentialStore(context)
+        testLogger = TestLogger()
+        credentialStore = AndroidCredentialStore(context, testLogger)
     }
     
     @Test
     @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
-    fun `credential storage round-trip should preserve key data`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
-        // Validates: Requirements 3.4, 3.5, 9.1
+    fun `password encryption round-trip should preserve data`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+        // Validates: Requirements 2.1, 2.2
         checkAll(
             iterations = 100,
             Arb.profileId(),
-            Arb.privateKeyData(),
-            Arb.keyType()
-        ) { profileId, keyData, keyType ->
-            // Store the key
-            val storeResult = credentialStore.storeKey(profileId, keyData, null)
+            Arb.password()
+        ) { profileId, password ->
+            // Store the password
+            val storeResult = credentialStore.storePassword(profileId, password)
             storeResult.isSuccess shouldBe true
             
-            // Retrieve the key
-            val retrieveResult = credentialStore.retrieveKey(profileId, null)
+            // Retrieve the password
+            val retrieveResult = credentialStore.retrievePassword(profileId)
             retrieveResult.isSuccess shouldBe true
             
-            val retrievedKey = retrieveResult.getOrNull()
-            retrievedKey shouldNotBe null
+            val retrievedPassword = retrieveResult.getOrNull()
+            retrievedPassword shouldNotBe null
             
-            // Verify the key data is preserved
-            retrievedKey!!.keyData shouldBe keyData
+            // Verify the password is preserved exactly
+            retrievedPassword shouldBe password
             
             // Clean up
-            credentialStore.deleteKey(profileId)
+            credentialStore.deletePassword(profileId)
         }
     }
     
     @Test
     @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
-    fun `credential storage with passphrase should preserve key data`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
-        // Validates: Requirements 3.4, 3.5, 9.1
+    fun `deleted passwords should not be retrievable`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+        // Validates: Requirements 2.3
         checkAll(
             iterations = 100,
             Arb.profileId(),
-            Arb.privateKeyData(),
-            Arb.passphrase()
-        ) { profileId, keyData, passphrase ->
-            // Store the key with passphrase
-            val storeResult = credentialStore.storeKey(profileId, keyData, passphrase)
-            storeResult.isSuccess shouldBe true
+            Arb.password()
+        ) { profileId, password ->
+            // Store the password
+            credentialStore.storePassword(profileId, password)
             
-            // Retrieve the key with passphrase
-            val retrieveResult = credentialStore.retrieveKey(profileId, passphrase)
-            retrieveResult.isSuccess shouldBe true
-            
-            val retrievedKey = retrieveResult.getOrNull()
-            retrievedKey shouldNotBe null
-            
-            // Verify the key data is preserved
-            retrievedKey!!.keyData shouldBe keyData
-            
-            // Clean up
-            credentialStore.deleteKey(profileId)
-        }
-    }
-    
-    @Test
-    @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
-    fun `deleted credentials should not be retrievable`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
-        // Validates: Requirements 3.4, 3.5, 9.1
-        checkAll(
-            iterations = 100,
-            Arb.profileId(),
-            Arb.privateKeyData()
-        ) { profileId, keyData ->
-            // Store the key
-            credentialStore.storeKey(profileId, keyData, null)
-            
-            // Delete the key
-            val deleteResult = credentialStore.deleteKey(profileId)
+            // Delete the password
+            val deleteResult = credentialStore.deletePassword(profileId)
             deleteResult.isSuccess shouldBe true
             
-            // Try to retrieve the deleted key
-            val retrieveResult = credentialStore.retrieveKey(profileId, null)
+            // Try to retrieve the deleted password
+            val retrieveResult = credentialStore.retrievePassword(profileId)
             retrieveResult.isFailure shouldBe true
         }
     }
     
     @Test
     @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
-    fun `retrieving non-existent key should fail`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
-        // Validates: Requirements 3.4, 3.5, 9.1
+    fun `retrieving non-existent password should fail`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+        // Validates: Requirements 2.1, 2.2
         checkAll(
             iterations = 100,
             Arb.profileId()
         ) { profileId ->
-            // Try to retrieve a key that was never stored
-            val retrieveResult = credentialStore.retrieveKey(profileId, null)
+            // Try to retrieve a password that was never stored
+            val retrieveResult = credentialStore.retrievePassword(profileId)
             retrieveResult.isFailure shouldBe true
         }
     }
     
     @Test
     @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
-    fun `multiple profiles should store independently`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 14: Credential storage round-trip with encryption
-        // Validates: Requirements 3.4, 3.5, 9.1
+    fun `multiple profiles should store passwords independently`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+        // Validates: Requirements 2.1, 2.2
         checkAll(
             iterations = 50,
             Arb.profileId(),
             Arb.profileId(),
-            Arb.privateKeyData(),
-            Arb.privateKeyData()
-        ) { profileId1, profileId2, keyData1, keyData2 ->
+            Arb.password(),
+            Arb.password()
+        ) { profileId1, profileId2, password1, password2 ->
             // Skip if profile IDs are the same
             if (profileId1 == profileId2) return@checkAll
             
-            // Store two different keys for two different profiles
-            credentialStore.storeKey(profileId1, keyData1, null)
-            credentialStore.storeKey(profileId2, keyData2, null)
+            // Store two different passwords for two different profiles
+            credentialStore.storePassword(profileId1, password1)
+            credentialStore.storePassword(profileId2, password2)
             
-            // Retrieve both keys
-            val key1 = credentialStore.retrieveKey(profileId1, null).getOrNull()
-            val key2 = credentialStore.retrieveKey(profileId2, null).getOrNull()
+            // Retrieve both passwords
+            val retrievedPassword1 = credentialStore.retrievePassword(profileId1).getOrNull()
+            val retrievedPassword2 = credentialStore.retrievePassword(profileId2).getOrNull()
             
-            // Verify each key is correct
-            key1 shouldNotBe null
-            key2 shouldNotBe null
-            key1!!.keyData shouldBe keyData1
-            key2!!.keyData shouldBe keyData2
+            // Verify each password is correct
+            retrievedPassword1 shouldNotBe null
+            retrievedPassword2 shouldNotBe null
+            retrievedPassword1 shouldBe password1
+            retrievedPassword2 shouldBe password2
             
-            // Keys should be different if input data was different
-            if (!keyData1.contentEquals(keyData2)) {
-                key1.keyData shouldNotBe key2.keyData
+            // Passwords should be different if input data was different
+            if (password1 != password2) {
+                retrievedPassword1 shouldNotBe retrievedPassword2
             }
             
             // Clean up
-            credentialStore.deleteKey(profileId1)
-            credentialStore.deleteKey(profileId2)
+            credentialStore.deletePassword(profileId1)
+            credentialStore.deletePassword(profileId2)
         }
+    }
+    
+    @Test
+    @Ignore("Robolectric doesn't support Android Keystore - will be tested in integration tests")
+    fun `passwords should not appear in logs`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 2: Password encryption round-trip preserves data
+        // Validates: Requirements 2.4
+        checkAll(
+            iterations = 50,
+            Arb.profileId(),
+            Arb.password()
+        ) { profileId, password ->
+            // Clear previous logs
+            testLogger.clearLogs()
+            
+            // Store and retrieve password
+            credentialStore.storePassword(profileId, password)
+            credentialStore.retrievePassword(profileId)
+            
+            // Check that password doesn't appear in any log messages
+            val logMessages = testLogger.getLogEntries().map { it.message }
+            logMessages.forEach { message ->
+                message.contains(password) shouldBe false
+            }
+            
+            // Clean up
+            credentialStore.deletePassword(profileId)
+        }
+    }
+    
+    /**
+     * Test implementation of Logger for testing purposes.
+     */
+    private class TestLogger : Logger {
+        private val logs = mutableListOf<LogEntry>()
+        private var verboseEnabled = false
+        
+        override fun verbose(tag: String, message: String, throwable: Throwable?) {
+            if (verboseEnabled) {
+                logs.add(LogEntry(System.currentTimeMillis(), LogLevel.VERBOSE, tag, message, throwable))
+            }
+        }
+        
+        override fun debug(tag: String, message: String, throwable: Throwable?) {
+            logs.add(LogEntry(System.currentTimeMillis(), LogLevel.DEBUG, tag, message, throwable))
+        }
+        
+        override fun info(tag: String, message: String, throwable: Throwable?) {
+            logs.add(LogEntry(System.currentTimeMillis(), LogLevel.INFO, tag, message, throwable))
+        }
+        
+        override fun warn(tag: String, message: String, throwable: Throwable?) {
+            logs.add(LogEntry(System.currentTimeMillis(), LogLevel.WARN, tag, message, throwable))
+        }
+        
+        override fun error(tag: String, message: String, throwable: Throwable?) {
+            logs.add(LogEntry(System.currentTimeMillis(), LogLevel.ERROR, tag, message, throwable))
+        }
+        
+        override fun getLogEntries(): List<LogEntry> = logs.toList()
+        
+        override fun clearLogs() {
+            logs.clear()
+        }
+        
+        override fun setVerboseEnabled(enabled: Boolean) {
+            verboseEnabled = enabled
+        }
+        
+        override fun isVerboseEnabled(): Boolean = verboseEnabled
     }
 }
 
@@ -205,39 +247,11 @@ class CredentialStorePropertiesTest {
 fun Arb.Companion.profileId(): Arb<Long> = Arb.long(1L..10000L)
 
 /**
- * Generates random private key data (simulated).
- * In real usage, this would be actual SSH key data, but for testing
- * we generate random byte arrays of appropriate sizes.
+ * Generates random Shadowsocks passwords (8-64 characters).
+ * Includes alphanumeric characters and common special characters.
  */
-fun Arb.Companion.privateKeyData(): Arb<ByteArray> = arbitrary {
-    val keyType = Arb.keyType().bind()
-    val size = when (keyType) {
-        KeyType.ED25519 -> Arb.int(32..64).bind() // Ed25519 keys are typically 32 bytes
-        KeyType.ECDSA -> Arb.int(64..128).bind() // ECDSA keys vary
-        KeyType.RSA -> Arb.int(256..512).bind() // RSA keys are larger
-    }
-    
-    // Generate random bytes and add key type marker for detection
-    val keyData = ByteArray(size) { Arb.byte().bind() }
-    val marker = when (keyType) {
-        KeyType.ED25519 -> "ssh-ed25519"
-        KeyType.ECDSA -> "BEGIN EC PRIVATE KEY"
-        KeyType.RSA -> "BEGIN RSA PRIVATE KEY"
-    }
-    
-    // Prepend marker to help with key type detection
-    (marker.toByteArray() + keyData)
-}
-
-/**
- * Generates random key types.
- */
-fun Arb.Companion.keyType(): Arb<KeyType> = Arb.enum<KeyType>()
-
-/**
- * Generates random passphrases (8-32 characters).
- */
-fun Arb.Companion.passphrase(): Arb<String> = arbitrary {
-    val length = Arb.int(8..32).bind()
-    Arb.string(length, Codepoint.alphanumeric()).bind()
+fun Arb.Companion.password(): Arb<String> = arbitrary {
+    val length = Arb.int(8..64).bind()
+    val chars = ('a'..'z') + ('A'..'Z') + ('0'..'9') + listOf('!', '@', '#', '$', '%', '^', '&', '*', '-', '_', '+', '=')
+    String(CharArray(length) { chars.random() })
 }
