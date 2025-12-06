@@ -28,7 +28,7 @@ For a quick setup with secure defaults, use our automated installation script:
 
 ```bash
 # Download the installation script
-wget https://raw.githubusercontent.com/your-repo/ssh-tunnel-proxy/main/scripts/install-shadowsocks.sh
+wget https://raw.githubusercontent.com/badscrew/selfproxy/main/scripts/install-shadowsocks.sh
 
 # Make it executable
 chmod +x install-shadowsocks.sh

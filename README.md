@@ -135,7 +135,7 @@ For the best experience, set up a Shadowsocks server. We provide comprehensive d
 **Quick Setup (Ubuntu):**
 ```bash
 # Download and run the automated installation script
-wget https://raw.githubusercontent.com/your-repo/ssh-tunnel-proxy/main/scripts/install-shadowsocks.sh
+wget https://raw.githubusercontent.com/badscrew/selfproxy/main/scripts/install-shadowsocks.sh
 chmod +x install-shadowsocks.sh
 sudo ./install-shadowsocks.sh
 ```
