@@ -183,6 +183,7 @@
 
 
 
+
   - Create AppRoutingRepository interface in shared module
   - Implement getExcludedApps() using database
   - Implement setExcludedApps() with persistence
@@ -196,7 +197,11 @@
   - **Property 5: App routing configuration persists correctly**
   - **Validates: Requirements 5.3, 5.4, 5.5**
 
-- [ ] 11. Implement ConnectionManager
+- [x] 11. Implement ConnectionManager
+
+
+
+
   - Create ConnectionManager interface in shared module
   - Implement connect() to coordinate Shadowsocks and VPN
   - Implement disconnect() to cleanly shut down connection
@@ -206,11 +211,15 @@
   - Implement observeStatistics() flow
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 7.1, 7.2, 7.3, 7.4, 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 11.1 Write property test for connection state machine
+- [x] 11.1 Write property test for connection state machine
+
+
   - **Property 4: Connection state transitions are valid**
   - **Validates: Requirements 3.1, 3.4, 3.5**
 
-- [ ] 11.2 Write unit tests for ConnectionManager
+- [x] 11.2 Write unit tests for ConnectionManager
+
+
   - Test connect flow
   - Test disconnect flow
   - Test error handling
