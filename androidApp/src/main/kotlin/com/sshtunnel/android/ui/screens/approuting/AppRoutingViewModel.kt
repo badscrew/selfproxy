@@ -191,7 +191,7 @@ class AppRoutingViewModel @Inject constructor(
                 if (vpnState is com.sshtunnel.vpn.TunnelState.Active) {
                     val routingConfig = RoutingConfig(
                         excludedApps = state.selectedPackages,
-                        routingMode = state.routingMode.toVpnRoutingMode()
+                        routingMode = state.routingMode
                     )
                     vpnTunnelProvider.updateRouting(routingConfig).getOrThrow()
                 }
@@ -227,6 +227,32 @@ class AppRoutingViewModel @Inject constructor(
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
+    
+    /**
+     * Selects all currently filtered apps.
+     */
+    fun selectAllApps() {
+        _uiState.update { state ->
+            val allPackages = state.filteredApps.map { it.packageName }.toSet()
+            state.copy(
+                selectedPackages = state.selectedPackages + allPackages,
+                hasUnsavedChanges = true
+            )
+        }
+    }
+    
+    /**
+     * Deselects all currently filtered apps.
+     */
+    fun deselectAllApps() {
+        _uiState.update { state ->
+            val filteredPackages = state.filteredApps.map { it.packageName }.toSet()
+            state.copy(
+                selectedPackages = state.selectedPackages - filteredPackages,
+                hasUnsavedChanges = true
+            )
+        }
+    }
 }
 
 /**
@@ -247,12 +273,4 @@ data class AppRoutingUiState(
     val error: String? = null
 )
 
-/**
- * Converts data layer RoutingMode to VPN layer RoutingMode.
- */
-private fun RoutingMode.toVpnRoutingMode(): com.sshtunnel.vpn.RoutingMode {
-    return when (this) {
-        RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED -> com.sshtunnel.vpn.RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
-        RoutingMode.ROUTE_ONLY_INCLUDED -> com.sshtunnel.vpn.RoutingMode.ROUTE_ONLY_INCLUDED
-    }
-}
+

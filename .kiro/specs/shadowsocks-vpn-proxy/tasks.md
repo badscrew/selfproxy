@@ -304,6 +304,7 @@
 
 
 
+
   - Add "Test Connection" button to profile form
   - Implement test connection flow in ViewModel
   - Display test results (success/failure, latency)
@@ -312,7 +313,10 @@
   - Add timeout handling (10 seconds)
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-- [ ] 17. Implement app routing UI
+- [x] 17. Implement app routing UI
+
+
+
   - Create app selection screen
   - Display list of installed apps with icons
   - Add checkbox for each app to exclude from VPN

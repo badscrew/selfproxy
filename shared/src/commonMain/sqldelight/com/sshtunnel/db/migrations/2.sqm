@@ -1,0 +1,13 @@
+-- Migration 2: Add per-profile routing configuration support
+
+-- Drop the old app_routing_config table
+DROP TABLE IF EXISTS app_routing_config;
+
+-- Create new app_routing_config table with profile support
+CREATE TABLE app_routing_config (
+    profileId INTEGER NOT NULL,
+    packageName TEXT NOT NULL,
+    routingMode TEXT NOT NULL DEFAULT 'ROUTE_ALL_EXCEPT_EXCLUDED',
+    PRIMARY KEY (profileId, packageName),
+    FOREIGN KEY (profileId) REFERENCES server_profiles(id) ON DELETE CASCADE
+);

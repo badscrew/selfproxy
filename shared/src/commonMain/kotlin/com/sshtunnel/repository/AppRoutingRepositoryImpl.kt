@@ -1,5 +1,7 @@
 package com.sshtunnel.repository
 
+import com.sshtunnel.data.AppRoutingConfig
+import com.sshtunnel.data.RoutingMode
 import com.sshtunnel.db.SSHTunnelDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,26 +20,50 @@ class AppRoutingRepositoryImpl(
         // Android package name pattern: lowercase letters, numbers, underscores, and dots
         // Must contain at least one dot and not start/end with a dot
         private val PACKAGE_NAME_PATTERN = Regex("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$")
+        
+        // Default profile ID for global routing config (backward compatibility)
+        private const val DEFAULT_PROFILE_ID = -1L
     }
     
-    override suspend fun getExcludedApps(): Set<String> {
+    override suspend fun getRoutingConfig(profileId: Long): AppRoutingConfig? {
         return withContext(Dispatchers.Default) {
             try {
-                database.databaseQueries
-                    .selectAllExcludedApps()
+                val excludedApps = database.databaseQueries
+                    .selectAllExcludedApps(profileId)
                     .executeAsList()
                     .toSet()
+                
+                if (excludedApps.isEmpty()) {
+                    return@withContext null
+                }
+                
+                val routingModeStr = database.databaseQueries
+                    .selectRoutingMode(profileId)
+                    .executeAsOneOrNull()
+                    ?: "ROUTE_ALL_EXCEPT_EXCLUDED"
+                
+                val routingMode = try {
+                    RoutingMode.valueOf(routingModeStr)
+                } catch (e: IllegalArgumentException) {
+                    RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
+                }
+                
+                AppRoutingConfig(
+                    profileId = profileId,
+                    excludedPackages = excludedApps,
+                    routingMode = routingMode
+                )
             } catch (e: Exception) {
-                emptySet()
+                null
             }
         }
     }
     
-    override suspend fun setExcludedApps(packageNames: Set<String>): Result<Unit> {
+    override suspend fun saveRoutingConfig(config: AppRoutingConfig): Result<Unit> {
         return withContext(Dispatchers.Default) {
             try {
                 // Validate all package names first
-                val invalidPackages = packageNames.filter { !isValidPackageName(it) }
+                val invalidPackages = config.excludedPackages.filter { !isValidPackageName(it) }
                 if (invalidPackages.isNotEmpty()) {
                     return@withContext Result.failure(
                         IllegalArgumentException(
@@ -48,12 +74,17 @@ class AppRoutingRepositoryImpl(
                 
                 // Use transaction to ensure atomicity
                 database.databaseQueries.transaction {
-                    // Clear existing excluded apps
-                    database.databaseQueries.deleteAllExcludedApps()
+                    // Clear existing excluded apps for this profile
+                    database.databaseQueries.deleteAllExcludedAppsForProfile(config.profileId)
                     
-                    // Insert new excluded apps
-                    packageNames.forEach { packageName ->
-                        database.databaseQueries.insertExcludedApp(packageName)
+                    // Insert new excluded apps with routing mode
+                    val routingModeStr = config.routingMode.name
+                    config.excludedPackages.forEach { packageName ->
+                        database.databaseQueries.insertExcludedApp(
+                            config.profileId,
+                            packageName,
+                            routingModeStr
+                        )
                     }
                 }
                 
@@ -64,16 +95,50 @@ class AppRoutingRepositoryImpl(
         }
     }
     
-    override suspend fun isAppExcluded(packageName: String): Boolean {
+    override suspend fun getExcludedApps(profileId: Long): Set<String> {
         return withContext(Dispatchers.Default) {
             try {
                 database.databaseQueries
-                    .isAppExcluded(packageName)
+                    .selectAllExcludedApps(profileId)
+                    .executeAsList()
+                    .toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
+        }
+    }
+    
+    override suspend fun getExcludedApps(): Set<String> {
+        return getExcludedApps(DEFAULT_PROFILE_ID)
+    }
+    
+    override suspend fun setExcludedApps(profileId: Long, packageNames: Set<String>): Result<Unit> {
+        val config = AppRoutingConfig(
+            profileId = profileId,
+            excludedPackages = packageNames,
+            routingMode = RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
+        )
+        return saveRoutingConfig(config)
+    }
+    
+    override suspend fun setExcludedApps(packageNames: Set<String>): Result<Unit> {
+        return setExcludedApps(DEFAULT_PROFILE_ID, packageNames)
+    }
+    
+    override suspend fun isAppExcluded(profileId: Long, packageName: String): Boolean {
+        return withContext(Dispatchers.Default) {
+            try {
+                database.databaseQueries
+                    .isAppExcluded(profileId, packageName)
                     .executeAsOne()
             } catch (e: Exception) {
                 false
             }
         }
+    }
+    
+    override suspend fun isAppExcluded(packageName: String): Boolean {
+        return isAppExcluded(DEFAULT_PROFILE_ID, packageName)
     }
     
     /**

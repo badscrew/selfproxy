@@ -146,6 +146,30 @@ fun AppRoutingScreen(
                     )
                 }
                 
+                // Select All / Deselect All buttons
+                if (uiState.filteredApps.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.selectAllApps() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Select All")
+                        }
+                        
+                        OutlinedButton(
+                            onClick = { viewModel.deselectAllApps() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Deselect All")
+                        }
+                    }
+                }
+                
                 Divider()
                 
                 // App list
