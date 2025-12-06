@@ -103,13 +103,18 @@
 - [x] 5.1 Write property test for process manager
 
 
+
   - **Property 9: Process output capture**
   - **Property 10: Process alive status check**
   - **Property 12: Process termination detection**
   - **Property 13: Graceful shutdown with timeout**
   - **Validates: Requirements 6.1, 6.3, 7.1, 7.2, 7.3**
 
-- [ ] 6. Implement Connection Monitor component
+- [x] 6. Implement Connection Monitor component
+
+
+
+
   - Create ConnectionMonitor interface and implementation
   - Implement SOCKS5 port availability checking
   - Implement connection health monitoring (check every 1 second)
@@ -118,7 +123,9 @@
   - Implement connection state updates
   - _Requirements: 6.4, 6.5, 7.5, 14.5_
 
-- [ ] 6.1 Write property test for connection monitor
+- [x] 6.1 Write property test for connection monitor
+
+
   - **Property 11: SOCKS5 port availability check**
   - **Property 27: Process health monitoring frequency**
   - **Validates: Requirements 6.4, 14.5**
