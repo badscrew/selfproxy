@@ -7,6 +7,9 @@ import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.data.ShadowsocksConfig
 import com.sshtunnel.logging.Logger
 import com.sshtunnel.logging.LogEntry
+import com.sshtunnel.network.NetworkMonitor
+import com.sshtunnel.network.NetworkState
+import com.sshtunnel.network.NetworkType
 import com.sshtunnel.shadowsocks.ConnectionTestResult
 import com.sshtunnel.shadowsocks.ShadowsocksClient
 import com.sshtunnel.shadowsocks.ShadowsocksState
@@ -321,6 +324,7 @@ class ConnectionManagerTest {
             shadowsocksClient = mocks.shadowsocksClient,
             vpnTunnelProvider = mocks.vpnTunnelProvider,
             credentialStore = mocks.credentialStore,
+            networkMonitor = mocks.networkMonitor,
             scope = CoroutineScope(Dispatchers.Unconfined),
             logger = mocks.logger
         )
@@ -345,6 +349,7 @@ class ConnectionManagerTest {
         val shadowsocksClient = MockShadowsocksClient()
         val vpnTunnelProvider = MockVpnTunnelProvider()
         val credentialStore = MockCredentialStore()
+        val networkMonitor = MockNetworkMonitor()
         val logger = MockLogger()
     }
     
@@ -443,6 +448,18 @@ class ConnectionManagerTest {
             passwords.remove(profileId)
             return Result.success(Unit)
         }
+    }
+    
+    private class MockNetworkMonitor : NetworkMonitor {
+        private val networkStateFlow = MutableStateFlow<NetworkState>(
+            NetworkState.Available(NetworkType.WIFI)
+        )
+        
+        fun emitNetworkChange(state: NetworkState) {
+            networkStateFlow.value = state
+        }
+        
+        override fun observeNetworkChanges(): Flow<NetworkState> = networkStateFlow
     }
     
     private class MockLogger : Logger {

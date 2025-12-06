@@ -1,172 +1,181 @@
 package com.sshtunnel.reconnection
 
-import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
-import io.kotest.matchers.ints.shouldBeLessThanOrEqual
-import io.kotest.matchers.longs.shouldBeGreaterThan
-import io.kotest.matchers.longs.shouldBeLessThanOrEqual
-import io.kotest.matchers.shouldBe
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.int
-import io.kotest.property.arbitrary.list
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
-import kotlin.math.pow
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * Property-based tests for ReconnectionStateMachine.
  * 
- * Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
- * Validates: Requirements 4.3
+ * Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+ * Validates: Requirements 6.2
  */
 class ReconnectionStateMachinePropertiesTest {
     
     @Test
-    fun `exponential backoff should follow 2^n pattern up to max interval`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
+    fun `backoff should increase exponentially with each attempt`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+        // Validates: Requirements 6.2
+        
+        val stateMachine = ReconnectionStateMachine()
+        
         checkAll(
             iterations = 100,
-            Arb.int(0..20) // Test attempt numbers from 0 to 20
+            Arb.int(0..10) // Test attempts 0 through 10
         ) { attemptNumber ->
-            val stateMachine = ReconnectionStateMachine()
             val backoff = stateMachine.calculateBackoff(attemptNumber)
             
-            // Calculate expected backoff: min(2^attemptNumber, 60) seconds
-            val expectedSeconds = kotlin.math.min(
-                2.0.pow(attemptNumber).toInt(),
-                60
+            // Backoff should be positive
+            assertTrue(
+                backoff.inWholeSeconds > 0,
+                "Backoff for attempt $attemptNumber should be positive, got ${backoff.inWholeSeconds}s"
             )
             
-            // Verify backoff matches expected value
-            backoff.inWholeSeconds shouldBe expectedSeconds.toLong()
+            // For attempts before max, backoff should be 2^attemptNumber seconds
+            if (attemptNumber < 6) { // 2^6 = 64 > 60 (max)
+                val expectedSeconds = (1 shl attemptNumber).toLong() // 2^attemptNumber
+                assertTrue(
+                    backoff.inWholeSeconds == expectedSeconds,
+                    "Backoff for attempt $attemptNumber should be ${expectedSeconds}s, got ${backoff.inWholeSeconds}s"
+                )
+            }
+            
+            // Backoff should never exceed max (60 seconds)
+            assertTrue(
+                backoff.inWholeSeconds <= 60,
+                "Backoff for attempt $attemptNumber should not exceed 60s, got ${backoff.inWholeSeconds}s"
+            )
         }
     }
     
     @Test
-    fun `backoff should never exceed max retry interval of 60 seconds`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
+    fun `backoff should be capped at maximum retry interval`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+        // Validates: Requirements 6.2
+        
+        val stateMachine = ReconnectionStateMachine()
+        val maxRetryInterval = stateMachine.getMaxRetryInterval()
+        
         checkAll(
             iterations = 100,
-            Arb.int(0..100) // Test with large attempt numbers
+            Arb.int(6..100) // Test high attempt numbers where cap should apply
         ) { attemptNumber ->
-            val stateMachine = ReconnectionStateMachine()
             val backoff = stateMachine.calculateBackoff(attemptNumber)
             
-            // Verify backoff never exceeds 60 seconds
-            backoff.inWholeSeconds shouldBeLessThanOrEqual 60L
+            // Backoff should be capped at max retry interval
+            assertTrue(
+                backoff <= maxRetryInterval,
+                "Backoff for attempt $attemptNumber should be capped at ${maxRetryInterval.inWholeSeconds}s, got ${backoff.inWholeSeconds}s"
+            )
+            
+            // For high attempts, backoff should equal max
+            assertTrue(
+                backoff == maxRetryInterval,
+                "Backoff for attempt $attemptNumber should equal max ${maxRetryInterval.inWholeSeconds}s, got ${backoff.inWholeSeconds}s"
+            )
         }
     }
     
     @Test
-    fun `backoff should be monotonically increasing until max interval`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
+    fun `backoff should be monotonically increasing until cap`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+        // Validates: Requirements 6.2
+        
+        val stateMachine = ReconnectionStateMachine()
+        
         checkAll(
             iterations = 100,
-            Arb.int(0..10) // Test consecutive attempts
-        ) { startAttempt ->
-            val stateMachine = ReconnectionStateMachine()
+            Arb.int(0..9) // Test consecutive attempts
+        ) { attemptNumber ->
+            val currentBackoff = stateMachine.calculateBackoff(attemptNumber)
+            val nextBackoff = stateMachine.calculateBackoff(attemptNumber + 1)
             
-            val backoff1 = stateMachine.calculateBackoff(startAttempt)
-            val backoff2 = stateMachine.calculateBackoff(startAttempt + 1)
+            // Next backoff should be >= current backoff (monotonically increasing)
+            assertTrue(
+                nextBackoff >= currentBackoff,
+                "Backoff should increase: attempt $attemptNumber = ${currentBackoff.inWholeSeconds}s, attempt ${attemptNumber + 1} = ${nextBackoff.inWholeSeconds}s"
+            )
             
-            // If we haven't reached max interval, backoff should increase
-            if (backoff1.inWholeSeconds < 60L) {
-                backoff2.inWholeSeconds shouldBeGreaterThan backoff1.inWholeSeconds
-            } else {
-                // Once at max, should stay at max
-                backoff2.inWholeSeconds shouldBe 60L
+            // If not at cap, next should be exactly double (or reach cap)
+            if (currentBackoff < 60.seconds) {
+                val expectedNext = minOf((currentBackoff.inWholeSeconds * 2).seconds, 60.seconds)
+                assertTrue(
+                    nextBackoff == expectedNext,
+                    "Next backoff should be ${expectedNext.inWholeSeconds}s, got ${nextBackoff.inWholeSeconds}s"
+                )
             }
         }
     }
     
     @Test
-    fun `recordAttempt should increment attempt counter and return correct backoff`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
+    fun `recordAttempt should increment counter and return correct backoff`() = runTest {
+        // Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+        // Validates: Requirements 6.2
+        
         checkAll(
             iterations = 100,
-            Arb.list(Arb.int(1..10), 1..15) // Simulate multiple attempts
-        ) { attempts ->
+            Arb.int(1..10) // Test multiple sequential attempts
+        ) { numAttempts ->
             val stateMachine = ReconnectionStateMachine()
             
-            attempts.forEachIndexed { index, _ ->
-                val expectedBackoff = stateMachine.calculateBackoff(index)
-                val actualBackoff = stateMachine.recordAttempt()
+            for (i in 0 until numAttempts) {
+                val backoff = stateMachine.recordAttempt()
+                val expectedBackoff = stateMachine.calculateBackoff(i)
                 
-                // Verify backoff matches expected value
-                actualBackoff shouldBe expectedBackoff
+                assertTrue(
+                    backoff == expectedBackoff,
+                    "recordAttempt() at attempt $i should return ${expectedBackoff.inWholeSeconds}s, got ${backoff.inWholeSeconds}s"
+                )
                 
-                // Verify attempt counter incremented
-                stateMachine.getCurrentAttempt() shouldBe index + 1
+                assertTrue(
+                    stateMachine.getCurrentAttempt() == i + 1,
+                    "After $i attempts, counter should be ${i + 1}, got ${stateMachine.getCurrentAttempt()}"
+                )
             }
         }
     }
     
     @Test
     fun `reset should clear attempt counter`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
+        // Feature: shadowsocks-vpn-proxy, Property 7: Reconnection backoff increases exponentially
+        // Validates: Requirements 6.2
+        
         checkAll(
             iterations = 100,
-            Arb.int(1..20) // Number of attempts before reset
-        ) { numAttempts ->
+            Arb.int(1..20) // Test with various attempt counts before reset
+        ) { attemptsBeforeReset ->
             val stateMachine = ReconnectionStateMachine()
             
-            // Record multiple attempts
-            repeat(numAttempts) {
+            // Record some attempts
+            repeat(attemptsBeforeReset) {
                 stateMachine.recordAttempt()
             }
             
-            // Verify counter is non-zero
-            stateMachine.getCurrentAttempt() shouldBeGreaterThanOrEqual numAttempts
+            // Verify counter increased
+            assertTrue(
+                stateMachine.getCurrentAttempt() == attemptsBeforeReset,
+                "Before reset, counter should be $attemptsBeforeReset, got ${stateMachine.getCurrentAttempt()}"
+            )
             
             // Reset
             stateMachine.reset()
             
-            // Verify counter is back to zero
-            stateMachine.getCurrentAttempt() shouldBe 0
+            // Verify counter is back to 0
+            assertTrue(
+                stateMachine.getCurrentAttempt() == 0,
+                "After reset, counter should be 0, got ${stateMachine.getCurrentAttempt()}"
+            )
             
-            // Verify next backoff starts from beginning
-            val backoff = stateMachine.calculateBackoff(0)
-            backoff shouldBe 1.seconds
+            // Verify next backoff is back to initial value
+            val backoffAfterReset = stateMachine.recordAttempt()
+            assertTrue(
+                backoffAfterReset == 1.seconds,
+                "First backoff after reset should be 1s, got ${backoffAfterReset.inWholeSeconds}s"
+            )
         }
-    }
-    
-    @Test
-    fun `backoff for attempt 0 should be 1 second`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
-        val stateMachine = ReconnectionStateMachine()
-        val backoff = stateMachine.calculateBackoff(0)
-        
-        backoff shouldBe 1.seconds
-    }
-    
-    @Test
-    fun `backoff sequence should match expected pattern`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
-        val stateMachine = ReconnectionStateMachine()
-        
-        // Expected sequence: 1, 2, 4, 8, 16, 32, 60, 60, ...
-        val expectedSequence = listOf(1L, 2L, 4L, 8L, 16L, 32L, 60L, 60L, 60L)
-        
-        expectedSequence.forEachIndexed { index, expectedSeconds ->
-            val backoff = stateMachine.calculateBackoff(index)
-            backoff.inWholeSeconds shouldBe expectedSeconds
-        }
-    }
-    
-    @Test
-    fun `max retry interval should be 60 seconds`() = runTest {
-        // Feature: ssh-tunnel-proxy, Property 17: Exponential backoff retry pattern
-        // Validates: Requirements 4.3
-        val stateMachine = ReconnectionStateMachine()
-        
-        stateMachine.getMaxRetryInterval() shouldBe 60.seconds
     }
 }

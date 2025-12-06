@@ -202,6 +202,7 @@
 
 
 
+
   - Create ConnectionManager interface in shared module
   - Implement connect() to coordinate Shadowsocks and VPN
   - Implement disconnect() to cleanly shut down connection
@@ -226,7 +227,11 @@
   - Test state transitions
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-- [ ] 12. Implement automatic reconnection logic
+- [x] 12. Implement automatic reconnection logic
+
+
+
+
   - Add reconnection state to ConnectionManager
   - Implement exponential backoff algorithm (1s, 2s, 4s, 8s, 16s, 32s, 60s max)
   - Implement network change detection
@@ -235,11 +240,15 @@
   - Add reconnection attempt counter
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 12.1 Write property test for backoff calculation
+- [x] 12.1 Write property test for backoff calculation
+
+
   - **Property 7: Reconnection backoff increases exponentially**
   - **Validates: Requirements 6.2**
 
-- [ ] 12.2 Write unit tests for reconnection logic
+- [x] 12.2 Write unit tests for reconnection logic
+
+
   - Test backoff timing
   - Test network change handling
   - Test max retry behavior

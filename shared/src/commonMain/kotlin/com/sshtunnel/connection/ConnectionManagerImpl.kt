@@ -6,6 +6,9 @@ import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.data.ShadowsocksConfig
 import com.sshtunnel.data.VpnStatistics
 import com.sshtunnel.logging.Logger
+import com.sshtunnel.network.NetworkMonitor
+import com.sshtunnel.network.NetworkState
+import com.sshtunnel.reconnection.ReconnectionPolicy
 import com.sshtunnel.shadowsocks.ConnectionTestResult
 import com.sshtunnel.shadowsocks.ShadowsocksClient
 import com.sshtunnel.shadowsocks.ShadowsocksState
@@ -17,12 +20,16 @@ import com.sshtunnel.vpn.VpnError
 import com.sshtunnel.vpn.VpnTunnelProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -34,15 +41,19 @@ import kotlin.time.Duration.Companion.seconds
  * @property shadowsocksClient Client for managing Shadowsocks connections
  * @property vpnTunnelProvider Provider for VPN tunnel management
  * @property credentialStore Secure storage for passwords
+ * @property networkMonitor Monitor for network connectivity changes
  * @property scope Coroutine scope for background operations
  * @property logger Logger for debugging and monitoring
+ * @property reconnectionPolicy Policy for automatic reconnection behavior
  */
 class ConnectionManagerImpl(
     private val shadowsocksClient: ShadowsocksClient,
     private val vpnTunnelProvider: VpnTunnelProvider,
     private val credentialStore: CredentialStore,
+    private val networkMonitor: NetworkMonitor,
     private val scope: CoroutineScope,
-    private val logger: Logger
+    private val logger: Logger,
+    private val reconnectionPolicy: ReconnectionPolicy = ReconnectionPolicy.DEFAULT
 ) : ConnectionManager {
     
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -53,9 +64,17 @@ class ConnectionManagerImpl(
     
     private var shadowsocksStateJob: Job? = null
     private var tunnelStateJob: Job? = null
+    private var networkMonitorJob: Job? = null
+    private var reconnectionJob: Job? = null
+    
+    // Reconnection state
+    private var reconnectionAttempts = 0
+    private var isReconnecting = false
+    private var userDisconnected = false
     
     companion object {
         private const val TAG = "ConnectionManager"
+        private const val MAX_FAILED_ATTEMPTS_BEFORE_NOTIFICATION = 5
     }
     
     override fun observeConnectionState(): StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -72,6 +91,11 @@ class ConnectionManagerImpl(
             logger.warn(TAG, "Already connected, disconnecting first")
             disconnect()
         }
+        
+        // Reset reconnection state for new connection
+        userDisconnected = false
+        reconnectionAttempts = 0
+        isReconnecting = false
         
         // Update state to Connecting
         _connectionState.value = ConnectionState.Connecting
@@ -152,7 +176,11 @@ class ConnectionManagerImpl(
                 connectedAt = System.currentTimeMillis()
             )
             
-            // Step 6: Start monitoring state changes
+            // Step 6: Reset reconnection counter on successful connection
+            reconnectionAttempts = 0
+            isReconnecting = false
+            
+            // Step 7: Start monitoring state changes
             startMonitoring()
             
             logger.info(TAG, "Successfully connected to ${profile.name}")
@@ -183,6 +211,13 @@ class ConnectionManagerImpl(
     override suspend fun disconnect(): Result<Unit> {
         logger.info(TAG, "Disconnecting")
         
+        // Mark as user-initiated disconnect to prevent auto-reconnect
+        userDisconnected = true
+        
+        // Cancel any ongoing reconnection attempts
+        reconnectionJob?.cancel()
+        reconnectionJob = null
+        
         // Stop monitoring
         stopMonitoring()
         
@@ -202,6 +237,8 @@ class ConnectionManagerImpl(
             socksPort = null
             currentProfile = null
             _statistics.value = VpnStatistics()
+            reconnectionAttempts = 0
+            isReconnecting = false
             
             // Step 4: Update state to Disconnected
             _connectionState.value = ConnectionState.Disconnected
@@ -217,6 +254,8 @@ class ConnectionManagerImpl(
             socksPort = null
             currentProfile = null
             _statistics.value = VpnStatistics()
+            reconnectionAttempts = 0
+            isReconnecting = false
             
             return Result.failure(e)
         }
@@ -283,6 +322,16 @@ class ConnectionManagerImpl(
                 handleTunnelStateChange(state)
             }
             .launchIn(scope)
+        
+        // Monitor network changes if reconnection policy allows
+        if (reconnectionPolicy.enabled && reconnectionPolicy.reconnectOnNetworkChange) {
+            networkMonitorJob = networkMonitor.observeNetworkChanges()
+                .onEach { networkState ->
+                    logger.debug(TAG, "Network state changed to $networkState")
+                    handleNetworkChange(networkState)
+                }
+                .launchIn(scope)
+        }
     }
     
     /**
@@ -292,8 +341,10 @@ class ConnectionManagerImpl(
         logger.debug(TAG, "Stopping state monitoring")
         shadowsocksStateJob?.cancel()
         tunnelStateJob?.cancel()
+        networkMonitorJob?.cancel()
         shadowsocksStateJob = null
         tunnelStateJob = null
+        networkMonitorJob = null
     }
     
     /**
@@ -304,27 +355,41 @@ class ConnectionManagerImpl(
             is ShadowsocksState.Error -> {
                 logger.error(TAG, "Shadowsocks error: ${state.message}")
                 
-                // Only update to error if we're currently connected or connecting
+                // Only handle if we're currently connected or connecting
                 if (_connectionState.value is ConnectionState.Connected ||
                     _connectionState.value is ConnectionState.Connecting) {
                     
-                    scope.launch {
-                        // Try to disconnect cleanly
-                        disconnect()
+                    // Trigger reconnection if enabled
+                    if (reconnectionPolicy.enabled && !userDisconnected) {
+                        logger.info(TAG, "Connection lost, attempting to reconnect")
+                        scope.launch {
+                            attemptReconnection()
+                        }
+                    } else {
+                        scope.launch {
+                            disconnect()
+                        }
+                        
+                        _connectionState.value = ConnectionState.Error(
+                            message = "Shadowsocks error: ${state.message}",
+                            errorType = ErrorType.UNKNOWN
+                        )
                     }
-                    
-                    _connectionState.value = ConnectionState.Error(
-                        message = "Shadowsocks error: ${state.message}",
-                        errorType = ErrorType.UNKNOWN
-                    )
                 }
             }
             is ShadowsocksState.Idle -> {
                 // Shadowsocks stopped - if we're connected, this is unexpected
-                if (_connectionState.value is ConnectionState.Connected) {
+                if (_connectionState.value is ConnectionState.Connected && !userDisconnected) {
                     logger.warn(TAG, "Shadowsocks stopped unexpectedly")
-                    scope.launch {
-                        disconnect()
+                    
+                    if (reconnectionPolicy.enabled) {
+                        scope.launch {
+                            attemptReconnection()
+                        }
+                    } else {
+                        scope.launch {
+                            disconnect()
+                        }
                     }
                 }
             }
@@ -342,27 +407,41 @@ class ConnectionManagerImpl(
             is TunnelState.Error -> {
                 logger.error(TAG, "VPN tunnel error: ${state.error}")
                 
-                // Only update to error if we're currently connected or connecting
+                // Only handle if we're currently connected or connecting
                 if (_connectionState.value is ConnectionState.Connected ||
                     _connectionState.value is ConnectionState.Connecting) {
                     
-                    scope.launch {
-                        // Try to disconnect cleanly
-                        disconnect()
+                    // Trigger reconnection if enabled
+                    if (reconnectionPolicy.enabled && !userDisconnected) {
+                        logger.info(TAG, "VPN tunnel error, attempting to reconnect")
+                        scope.launch {
+                            attemptReconnection()
+                        }
+                    } else {
+                        scope.launch {
+                            disconnect()
+                        }
+                        
+                        _connectionState.value = ConnectionState.Error(
+                            message = "VPN tunnel error: ${state.error}",
+                            errorType = ErrorType.UNKNOWN
+                        )
                     }
-                    
-                    _connectionState.value = ConnectionState.Error(
-                        message = "VPN tunnel error: ${state.error}",
-                        errorType = ErrorType.UNKNOWN
-                    )
                 }
             }
             is TunnelState.Inactive -> {
                 // Tunnel stopped - if we're connected, this is unexpected
-                if (_connectionState.value is ConnectionState.Connected) {
+                if (_connectionState.value is ConnectionState.Connected && !userDisconnected) {
                     logger.warn(TAG, "VPN tunnel stopped unexpectedly")
-                    scope.launch {
-                        disconnect()
+                    
+                    if (reconnectionPolicy.enabled) {
+                        scope.launch {
+                            attemptReconnection()
+                        }
+                    } else {
+                        scope.launch {
+                            disconnect()
+                        }
                     }
                 }
             }
@@ -370,5 +449,145 @@ class ConnectionManagerImpl(
                 // Other states are normal during connection lifecycle
             }
         }
+    }
+    
+    /**
+     * Handles network connectivity changes.
+     */
+    private fun handleNetworkChange(networkState: NetworkState) {
+        when (networkState) {
+            is NetworkState.Changed -> {
+                // Network type changed (e.g., WiFi to Mobile)
+                if (_connectionState.value is ConnectionState.Connected && !userDisconnected) {
+                    logger.info(TAG, "Network changed from ${networkState.fromType} to ${networkState.toType}, reconnecting")
+                    scope.launch {
+                        attemptReconnection()
+                    }
+                }
+            }
+            is NetworkState.Lost -> {
+                // Network lost - wait for it to come back
+                logger.warn(TAG, "Network connection lost")
+            }
+            is NetworkState.Available -> {
+                // Network available - if we were disconnected due to network loss, reconnect
+                if (_connectionState.value is ConnectionState.Reconnecting && !userDisconnected) {
+                    logger.info(TAG, "Network available, continuing reconnection")
+                }
+            }
+            else -> {
+                // Other network states
+            }
+        }
+    }
+    
+    /**
+     * Attempts to reconnect with exponential backoff.
+     */
+    private suspend fun attemptReconnection() {
+        // Prevent multiple concurrent reconnection attempts
+        if (isReconnecting) {
+            logger.debug(TAG, "Reconnection already in progress")
+            return
+        }
+        
+        isReconnecting = true
+        
+        // Cancel any existing reconnection job
+        reconnectionJob?.cancel()
+        
+        reconnectionJob = scope.launch {
+            val profile = currentProfile
+            if (profile == null) {
+                logger.error(TAG, "Cannot reconnect: no profile available")
+                isReconnecting = false
+                return@launch
+            }
+            
+            // Check if we've exceeded max attempts
+            if (reconnectionPolicy.maxAttempts > 0 && reconnectionAttempts >= reconnectionPolicy.maxAttempts) {
+                logger.error(TAG, "Max reconnection attempts (${reconnectionPolicy.maxAttempts}) exceeded")
+                _connectionState.value = ConnectionState.Error(
+                    message = "Failed to reconnect after ${reconnectionAttempts} attempts",
+                    errorType = ErrorType.UNKNOWN
+                )
+                isReconnecting = false
+                return@launch
+            }
+            
+            while (isReconnecting && !userDisconnected) {
+                reconnectionAttempts++
+                
+                // Update state to Reconnecting
+                _connectionState.value = ConnectionState.Reconnecting(attempt = reconnectionAttempts)
+                
+                // Calculate backoff delay
+                val backoffDelay = calculateBackoff(reconnectionAttempts - 1)
+                logger.info(TAG, "Reconnection attempt $reconnectionAttempts, waiting ${backoffDelay.inWholeSeconds}s")
+                
+                // Notify user after 5 failed attempts
+                if (reconnectionAttempts == MAX_FAILED_ATTEMPTS_BEFORE_NOTIFICATION) {
+                    logger.warn(TAG, "Reconnection failed $MAX_FAILED_ATTEMPTS_BEFORE_NOTIFICATION times, user should be notified")
+                    // Note: Actual notification would be handled by UI layer observing connection state
+                }
+                
+                // Wait before attempting reconnection
+                delay(backoffDelay)
+                
+                // Check if we should still reconnect
+                if (userDisconnected || !isReconnecting) {
+                    logger.info(TAG, "Reconnection cancelled")
+                    break
+                }
+                
+                // Clean up current connection state
+                try {
+                    shadowsocksClient.stop()
+                    vpnTunnelProvider.stopTunnel()
+                } catch (e: Exception) {
+                    logger.error(TAG, "Error cleaning up before reconnection", e)
+                }
+                
+                // Attempt to reconnect
+                logger.info(TAG, "Attempting to reconnect (attempt $reconnectionAttempts)")
+                val result = connect(profile)
+                
+                if (result.isSuccess) {
+                    logger.info(TAG, "Reconnection successful after $reconnectionAttempts attempts")
+                    isReconnecting = false
+                    break
+                } else {
+                    logger.warn(TAG, "Reconnection attempt $reconnectionAttempts failed: ${result.exceptionOrNull()?.message}")
+                    
+                    // Check if we've exceeded max attempts
+                    if (reconnectionPolicy.maxAttempts > 0 && reconnectionAttempts >= reconnectionPolicy.maxAttempts) {
+                        logger.error(TAG, "Max reconnection attempts (${reconnectionPolicy.maxAttempts}) exceeded")
+                        _connectionState.value = ConnectionState.Error(
+                            message = "Failed to reconnect after ${reconnectionAttempts} attempts",
+                            errorType = ErrorType.UNKNOWN
+                        )
+                        isReconnecting = false
+                        break
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Calculates exponential backoff delay for reconnection attempts.
+     * 
+     * Uses formula: min(initialBackoff * (multiplier ^ attemptNumber), maxBackoff)
+     * Default: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
+     * 
+     * @param attemptNumber The attempt number (0-indexed)
+     * @return Duration to wait before next attempt
+     */
+    private fun calculateBackoff(attemptNumber: Int): Duration {
+        val backoffSeconds = reconnectionPolicy.initialBackoff.inWholeSeconds * 
+            reconnectionPolicy.backoffMultiplier.pow(attemptNumber).toLong()
+        
+        val cappedSeconds = min(backoffSeconds, reconnectionPolicy.maxBackoff.inWholeSeconds)
+        return cappedSeconds.seconds
     }
 }
