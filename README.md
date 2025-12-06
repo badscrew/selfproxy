@@ -49,12 +49,23 @@ ssh-tunnel-proxy/
 - **Serialization**: kotlinx-serialization
 
 ### Android-Specific
-- **SSH Library**: sshj 0.38.0
+- **SSH Implementation**: Native OpenSSH binaries (primary) with sshj fallback
 - **Cryptography**: BouncyCastle (bcprov-jdk18on, bcpkix-jdk18on)
 - **VPN**: Android VpnService API
 - **Credential Storage**: Android Keystore
 - **DI**: Hilt for dependency injection
 - **UI**: Jetpack Compose with Material Design 3
+
+### Native SSH Client
+
+The app uses native OpenSSH binaries compiled for Android to provide reliable SSH connections:
+
+- **OpenSSH**: Version 9.6p1+ from Termux project
+- **OpenSSL**: Version 3.2.0+ for cryptography
+- **Architectures**: ARM64, ARM32, x86_64, x86
+- **Fallback**: Automatic fallback to sshj if native SSH unavailable
+
+For setup instructions, see [NATIVE_SSH_SETUP.md](NATIVE_SSH_SETUP.md).
 
 ## Building the Project
 

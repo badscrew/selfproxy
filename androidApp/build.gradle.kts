@@ -36,6 +36,40 @@ android {
         }
     }
     
+    // APK splits for native SSH binaries
+    // This creates separate APKs for each architecture to reduce download size
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true // Also create a universal APK with all architectures
+        }
+    }
+    
+    // Version code strategy for APK splits
+    // Each architecture gets a unique version code
+    androidComponents {
+        onVariants { variant ->
+            variant.outputs.forEach { output ->
+                val abiName = output.filters.find { it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI }?.identifier
+                val baseVersionCode = defaultConfig.versionCode ?: 1
+                
+                // Assign version codes based on architecture
+                // This ensures Google Play serves the correct APK to each device
+                val versionCodeOffset = when (abiName) {
+                    "arm64-v8a" -> 1    // Most common, highest priority
+                    "armeabi-v7a" -> 2  // Legacy ARM devices
+                    "x86_64" -> 3       // Emulators and x86 devices
+                    "x86" -> 4          // Legacy x86 devices
+                    else -> 0           // Universal APK
+                }
+                
+                output.versionCode.set(baseVersionCode * 10 + versionCodeOffset)
+            }
+        }
+    }
+    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

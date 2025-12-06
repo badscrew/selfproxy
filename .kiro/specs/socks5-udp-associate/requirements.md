@@ -1,10 +1,10 @@
 # Requirements Document
 
 ## Introduction
-
+ 
 This specification defines the requirements for implementing SOCKS5 UDP ASSOCIATE functionality in the SSH Tunnel Proxy VPN application. This feature will enable UDP-based applications such as video calling (WhatsApp, Telegram, Zoom, Discord), voice chat, and online gaming to work through the VPN tunnel. Currently, only DNS queries (UDP port 53) are supported; this enhancement will add support for all UDP traffic.
 
-**CRITICAL CONSTRAINT**: Standard OpenSSH dynamic forwarding (`ssh -D`) does **NOT** support SOCKS5 UDP ASSOCIATE (command 0x03). This feature requires either:
+**CRITICAL CONSTRAINT**:Standard OpenSSH dynamic forwarding (`ssh -D`) does **NOT** support SOCKS5 UDP ASSOCIATE (command 0x03). This feature requires either:
 1. A dedicated SOCKS5 server with UDP support (e.g., Dante, Shadowsocks, 3proxy)
 2. A custom SSH server implementation with UDP relay capabilities
 3. An alternative tunneling approach (e.g., tun2socks, VPN-over-SSH)
