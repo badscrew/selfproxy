@@ -136,6 +136,7 @@
 
 
 
+
   - Create NativeSSHClient interface and implementation
   - Integrate BinaryManager for binary extraction
   - Integrate PrivateKeyManager for key file handling
@@ -154,7 +155,11 @@
   - **Property 12: Process termination detection**
   - **Validates: Requirements 6.5, 7.5**
 
-- [ ] 8. Implement Error Handler component
+- [x] 8. Implement Error Handler component
+
+
+
+
   - Create SSHError sealed class hierarchy
   - Create ErrorHandler interface and implementation
   - Implement error classification logic
@@ -165,7 +170,9 @@
   - Implement cleanup on process crashes
   - _Requirements: 8.1, 8.2, 8.4, 8.5_
 
-- [ ] 8.1 Write property test for error handler
+- [x] 8.1 Write property test for error handler
+
+
   - **Property 2: Fallback to sshj on native unavailability**
   - **Property 14: Error result on process start failure**
   - **Property 15: Reconnection on connection loss**
