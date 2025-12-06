@@ -317,6 +317,7 @@
 
 
 
+
   - Create app selection screen
   - Display list of installed apps with icons
   - Add checkbox for each app to exclude from VPN
@@ -325,7 +326,10 @@
   - Persist selections via AppRoutingRepository
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 18. Update ViewModels for Shadowsocks
+- [x] 18. Update ViewModels for Shadowsocks
+
+
+
   - Update ProfilesViewModel for Shadowsocks profiles
   - Update ConnectionViewModel for Shadowsocks connection
   - Add connection testing logic to ViewModel

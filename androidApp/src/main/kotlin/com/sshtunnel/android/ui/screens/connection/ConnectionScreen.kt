@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.data.VpnStatistics
-import com.sshtunnel.testing.ConnectionTestResult
+import com.sshtunnel.shadowsocks.ConnectionTestResult
 import kotlin.time.Duration
 
 /**
@@ -698,10 +698,10 @@ private fun ConnectionTestResultCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (result.isRoutingCorrectly) {
+            containerColor = if (result.success) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.tertiaryContainer
+                MaterialTheme.colorScheme.errorContainer
             }
         )
     ) {
@@ -719,16 +719,16 @@ private fun ConnectionTestResultCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = if (result.isRoutingCorrectly) {
+                        imageVector = if (result.success) {
                             Icons.Default.CheckCircle
                         } else {
                             Icons.Default.Warning
                         },
                         contentDescription = null,
-                        tint = if (result.isRoutingCorrectly) {
+                        tint = if (result.success) {
                             MaterialTheme.colorScheme.primary
                         } else {
-                            MaterialTheme.colorScheme.tertiary
+                            MaterialTheme.colorScheme.error
                         }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -752,45 +752,33 @@ private fun ConnectionTestResultCard(
             Spacer(modifier = Modifier.height(12.dp))
             
             InfoRow(
-                label = "External IP",
-                value = result.externalIp
+                label = "Status",
+                value = if (result.success) "Success" else "Failed"
             )
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            result.expectedServerIp?.let { expectedIp ->
+            result.latencyMs?.let { latency ->
                 InfoRow(
-                    label = "Expected IP",
-                    value = expectedIp
+                    label = "Latency",
+                    value = "${latency}ms"
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
             
-            InfoRow(
-                label = "Routing Status",
-                value = if (result.isRoutingCorrectly) "Correct" else "Unknown"
-            )
+            result.errorMessage?.let { error ->
+                InfoRow(
+                    label = "Error",
+                    value = error
+                )
+            }
             
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            InfoRow(
-                label = "Latency",
-                value = formatDuration(result.latency)
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            InfoRow(
-                label = "Test Service",
-                value = result.testServiceUsed
-            )
-            
-            if (!result.isRoutingCorrectly && result.expectedServerIp != null) {
+            if (result.success) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Note: The external IP doesn't match the expected server IP. This may be normal if your server uses NAT or a proxy.",
+                    text = "Connection test successful! The server is reachable and credentials are valid.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }

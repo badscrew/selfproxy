@@ -1,16 +1,24 @@
 package com.sshtunnel.android.di
 
 import android.content.Context
+import com.sshtunnel.connection.ConnectionManager
+import com.sshtunnel.connection.ConnectionManagerImpl
 import com.sshtunnel.db.DatabaseDriverFactory
 import com.sshtunnel.db.SSHTunnelDatabase
-import com.sshtunnel.repository.ProfileRepository
-import com.sshtunnel.repository.ProfileRepositoryImpl
-import com.sshtunnel.android.data.SettingsRepository
-import com.sshtunnel.storage.AndroidCredentialStore
-import com.sshtunnel.storage.CredentialStore
+import com.sshtunnel.logging.Logger
+import com.sshtunnel.network.AndroidNetworkMonitor
+import com.sshtunnel.network.NetworkMonitor
+import com.sshtunnel.reconnection.ReconnectionPolicy
 import com.sshtunnel.repository.AppRoutingRepository
 import com.sshtunnel.repository.AppRoutingRepositoryImpl
+import com.sshtunnel.repository.ProfileRepository
+import com.sshtunnel.repository.ProfileRepositoryImpl
+import com.sshtunnel.shadowsocks.AndroidShadowsocksClient
+import com.sshtunnel.shadowsocks.ShadowsocksClient
+import com.sshtunnel.storage.AndroidCredentialStore
+import com.sshtunnel.storage.CredentialStore
 import com.sshtunnel.vpn.AndroidVpnTunnelProvider
+import com.sshtunnel.vpn.VpnTunnelProvider
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -55,8 +63,42 @@ object DatabaseModule {
     
     @Provides
     @Singleton
-    fun provideVpnTunnelProvider(@ApplicationContext context: Context): AndroidVpnTunnelProvider {
+    fun provideVpnTunnelProvider(@ApplicationContext context: Context): VpnTunnelProvider {
         return AndroidVpnTunnelProvider(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideShadowsocksClient(
+        @ApplicationContext context: Context,
+        logger: Logger
+    ): ShadowsocksClient {
+        return AndroidShadowsocksClient(context, logger)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideNetworkMonitor(@ApplicationContext context: Context): NetworkMonitor {
+        return AndroidNetworkMonitor(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideConnectionManager(
+        shadowsocksClient: ShadowsocksClient,
+        vpnTunnelProvider: VpnTunnelProvider,
+        credentialStore: CredentialStore,
+        networkMonitor: NetworkMonitor,
+        logger: Logger
+    ): ConnectionManager {
+        return ConnectionManagerImpl(
+            shadowsocksClient = shadowsocksClient,
+            vpnTunnelProvider = vpnTunnelProvider,
+            credentialStore = credentialStore,
+            networkMonitor = networkMonitor,
+            reconnectionPolicy = ReconnectionPolicy.default(),
+            logger = logger
+        )
     }
     
 }

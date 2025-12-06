@@ -7,8 +7,7 @@ import com.sshtunnel.data.ConnectionState
 import com.sshtunnel.data.ServerProfile
 import com.sshtunnel.data.VpnStatistics
 import com.sshtunnel.repository.ProfileRepository
-import com.sshtunnel.testing.ConnectionTestResult
-import com.sshtunnel.testing.ConnectionTestService
+import com.sshtunnel.shadowsocks.ConnectionTestResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +24,6 @@ import javax.inject.Inject
 @HiltViewModel
 class ConnectionViewModel @Inject constructor(
     private val connectionManager: ConnectionManager,
-    private val connectionTestService: ConnectionTestService,
     private val profileRepository: ProfileRepository,
     private val logger: com.sshtunnel.logging.Logger,
     @ApplicationContext private val context: android.content.Context
@@ -168,16 +166,27 @@ class ConnectionViewModel @Inject constructor(
     }
     
     /**
-     * Tests the current connection by checking external IP.
+     * Tests the connection to the Shadowsocks server.
+     * Validates server reachability, credentials, and measures latency.
      */
     fun testConnection() {
+        val profile = currentProfile
+        if (profile == null) {
+            logger.error(TAG, "Test connection called but no profile selected")
+            _testResult.value = TestResultState.Error("No profile selected")
+            return
+        }
+        
+        logger.info(TAG, "Testing connection to profile: ${profile.name}")
         viewModelScope.launch {
             _testResult.value = TestResultState.Testing
             
-            val result = connectionTestService.testConnection()
+            val result = connectionManager.testConnection(profile)
             result.onSuccess { testResult ->
+                logger.info(TAG, "Connection test completed: success=${testResult.success}, latency=${testResult.latencyMs}ms")
                 _testResult.value = TestResultState.Success(testResult)
             }.onFailure { error ->
+                logger.error(TAG, "Connection test failed: ${error.message}", error)
                 _testResult.value = TestResultState.Error(
                     error.message ?: "Connection test failed"
                 )
@@ -220,7 +229,7 @@ class ConnectionViewModel @Inject constructor(
                 ConnectionUiState.Connected(
                     profileId = state.profileId,
                     serverAddress = state.serverAddress,
-                    connectedAt = state.connectedAt,
+                    connectedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(state.connectedAt),
                     profile = currentProfile
                 )
             }
@@ -235,7 +244,7 @@ class ConnectionViewModel @Inject constructor(
                 logger.error(TAG, "UI state updated to Error: ${state.message}")
                 ConnectionUiState.Error(
                     message = state.message,
-                    cause = state.cause
+                    cause = null
                 )
             }
         }
