@@ -1,5 +1,6 @@
 package com.sshtunnel.data
 
+import com.sshtunnel.ssh.SSHImplementationType
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -14,6 +15,7 @@ import kotlin.time.Duration.Companion.seconds
  * @property strictHostKeyChecking Whether to verify SSH server host keys
  * @property dnsMode How DNS queries should be handled
  * @property verboseLogging Whether to enable verbose logging for debugging
+ * @property sshImplementationType SSH implementation to use (native, sshj, or auto)
  */
 data class ConnectionSettings(
     val sshPort: Int = 22,
@@ -23,7 +25,8 @@ data class ConnectionSettings(
     val customSocksPort: Int? = null,
     val strictHostKeyChecking: Boolean = false,
     val dnsMode: DnsMode = DnsMode.THROUGH_TUNNEL,
-    val verboseLogging: Boolean = false
+    val verboseLogging: Boolean = false,
+    val sshImplementationType: SSHImplementationType = SSHImplementationType.AUTO
 )
 
 /**

@@ -22,6 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.sshtunnel.android.logging.LogExportService
 import com.sshtunnel.data.DnsMode
 import com.sshtunnel.logging.Logger
+import com.sshtunnel.ssh.SSHImplementationType
 import kotlinx.coroutines.launch
 
 /**
@@ -114,6 +115,18 @@ fun SettingsScreen(
                     checked = settings.strictHostKeyChecking,
                     onCheckedChange = { viewModel.updateStrictHostKeyChecking(it) },
                     description = "Verify SSH server host keys"
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // SSH Implementation Section
+            SettingsSection(title = "SSH Implementation") {
+                SshImplementationTypeSettingItem(
+                    label = "SSH Implementation",
+                    selectedType = settings.sshImplementationType,
+                    onTypeSelected = { viewModel.updateSshImplementationType(it) },
+                    description = "Choose which SSH implementation to use"
                 )
             }
             
@@ -388,6 +401,90 @@ private fun formatDnsMode(mode: DnsMode): String {
         DnsMode.THROUGH_TUNNEL -> "Through Tunnel"
         DnsMode.CUSTOM_DNS -> "Custom DNS"
         DnsMode.SYSTEM_DEFAULT -> "System Default"
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SshImplementationTypeSettingItem(
+    label: String,
+    selectedType: SSHImplementationType,
+    onTypeSelected: (SSHImplementationType) -> Unit,
+    description: String
+) {
+    var expanded by remember { mutableStateOf(false) }
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        
+        Spacer(modifier = Modifier.height(4.dp))
+        
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it }
+        ) {
+            OutlinedTextField(
+                value = formatSshImplementationType(selectedType),
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+            )
+            
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                SSHImplementationType.entries.forEach { type ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(formatSshImplementationType(type))
+                                Text(
+                                    text = getSshImplementationTypeDescription(type),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        onClick = {
+                            onTypeSelected(type)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSshImplementationType(type: SSHImplementationType): String {
+    return when (type) {
+        SSHImplementationType.NATIVE -> "Native OpenSSH"
+        SSHImplementationType.SSHJ -> "Java sshj Library"
+        SSHImplementationType.AUTO -> "Automatic"
+    }
+}
+
+private fun getSshImplementationTypeDescription(type: SSHImplementationType): String {
+    return when (type) {
+        SSHImplementationType.NATIVE -> "Use native OpenSSH binary (recommended)"
+        SSHImplementationType.SSHJ -> "Use Java sshj library"
+        SSHImplementationType.AUTO -> "Prefer native, fallback to sshj"
     }
 }
 

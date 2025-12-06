@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
+import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -31,6 +32,7 @@ class SettingsRepository @Inject constructor(
         private val STRICT_HOST_KEY_CHECKING = booleanPreferencesKey("strict_host_key_checking")
         private val DNS_MODE = stringPreferencesKey("dns_mode")
         private val VERBOSE_LOGGING = booleanPreferencesKey("verbose_logging")
+        private val SSH_IMPLEMENTATION_TYPE = stringPreferencesKey("ssh_implementation_type")
     }
     
     /**
@@ -51,7 +53,14 @@ class SettingsRepository @Inject constructor(
                     DnsMode.THROUGH_TUNNEL
                 }
             } ?: DnsMode.THROUGH_TUNNEL,
-            verboseLogging = preferences[VERBOSE_LOGGING] ?: false
+            verboseLogging = preferences[VERBOSE_LOGGING] ?: false,
+            sshImplementationType = preferences[SSH_IMPLEMENTATION_TYPE]?.let {
+                try {
+                    SSHImplementationType.valueOf(it)
+                } catch (e: IllegalArgumentException) {
+                    SSHImplementationType.AUTO
+                }
+            } ?: SSHImplementationType.AUTO
         )
     }
     
@@ -128,6 +137,15 @@ class SettingsRepository @Inject constructor(
     suspend fun updateVerboseLogging(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[VERBOSE_LOGGING] = enabled
+        }
+    }
+    
+    /**
+     * Update SSH implementation type.
+     */
+    suspend fun updateSshImplementationType(type: SSHImplementationType) {
+        context.dataStore.edit { preferences ->
+            preferences[SSH_IMPLEMENTATION_TYPE] = type.name
         }
     }
     

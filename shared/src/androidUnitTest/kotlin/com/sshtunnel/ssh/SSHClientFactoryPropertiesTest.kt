@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.boolean
+import io.kotest.property.arbitrary.enum
 import io.kotest.property.checkAll
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -78,22 +79,38 @@ class SSHClientFactoryPropertiesTest {
         // For any SSH client creation, when native SSH is available and no user preference 
         // overrides it, the system should create a native SSH client instance
         
-        checkAll(100, Arb.boolean()) { preferNative ->
-            val client = factory.create(logger, preferNative)
+        checkAll(100, Arb.enum<SSHImplementationType>()) { implementationType ->
+            val client = factory.create(logger, implementationType)
             
             // Client should always be created successfully
             client.shouldBeInstanceOf<SSHClient>()
             
-            // If native is available and preferred, should get native client
-            // If native is not available or not preferred, should get sshj client
+            // Check if native is available
             val nativeAvailable = factory.isNativeSSHAvailable()
             
-            if (preferNative && nativeAvailable) {
-                // Should get native client
-                client.shouldBeInstanceOf<AndroidNativeSSHClient>()
-            } else {
-                // Should get sshj client
-                client.shouldBeInstanceOf<AndroidSSHClient>()
+            when (implementationType) {
+                SSHImplementationType.NATIVE -> {
+                    if (nativeAvailable) {
+                        // Should get native client
+                        client.shouldBeInstanceOf<AndroidNativeSSHClient>()
+                    } else {
+                        // Should fall back to sshj
+                        client.shouldBeInstanceOf<AndroidSSHClient>()
+                    }
+                }
+                SSHImplementationType.SSHJ -> {
+                    // Should always get sshj client
+                    client.shouldBeInstanceOf<AndroidSSHClient>()
+                }
+                SSHImplementationType.AUTO -> {
+                    if (nativeAvailable) {
+                        // Should get native client
+                        client.shouldBeInstanceOf<AndroidNativeSSHClient>()
+                    } else {
+                        // Should get sshj client
+                        client.shouldBeInstanceOf<AndroidSSHClient>()
+                    }
+                }
             }
         }
     }
@@ -106,8 +123,8 @@ class SSHClientFactoryPropertiesTest {
         // For any SSH client creation, when native SSH is not available,
         // the system should fall back to sshj implementation regardless of preference
         
-        checkAll(100, Arb.boolean()) { preferNative ->
-            val client = factory.create(logger, preferNative)
+        checkAll(100, Arb.enum<SSHImplementationType>()) { implementationType ->
+            val client = factory.create(logger, implementationType)
             
             // Client should always be created successfully
             client.shouldBeInstanceOf<SSHClient>()
@@ -150,8 +167,8 @@ class SSHClientFactoryPropertiesTest {
         // For any preference setting, client creation should always succeed
         // by falling back to sshj if native is unavailable
         
-        checkAll(100, Arb.boolean()) { preferNative ->
-            val client = factory.create(logger, preferNative)
+        checkAll(100, Arb.enum<SSHImplementationType>()) { implementationType ->
+            val client = factory.create(logger, implementationType)
             
             // Should always get a valid SSH client
             client.shouldBeInstanceOf<SSHClient>()

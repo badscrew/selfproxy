@@ -9,6 +9,7 @@ import com.sshtunnel.battery.BatteryOptimizationManager
 import com.sshtunnel.battery.BatteryState
 import com.sshtunnel.data.ConnectionSettings
 import com.sshtunnel.data.DnsMode
+import com.sshtunnel.ssh.SSHImplementationType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -139,6 +140,15 @@ class SettingsViewModel @Inject constructor(
     fun updateVerboseLogging(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateVerboseLogging(enabled)
+        }
+    }
+    
+    /**
+     * Update SSH implementation type.
+     */
+    fun updateSshImplementationType(type: SSHImplementationType) {
+        viewModelScope.launch {
+            settingsRepository.updateSshImplementationType(type)
         }
     }
     

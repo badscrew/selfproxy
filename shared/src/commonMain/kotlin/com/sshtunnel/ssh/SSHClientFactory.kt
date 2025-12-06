@@ -13,12 +13,12 @@ interface SSHClientFactory {
      * Create an SSH client instance.
      * 
      * @param logger Logger for diagnostic output
-     * @param preferNative Whether to prefer native implementation (default: true)
+     * @param implementationType SSH implementation type preference
      * @return SSH client instance (native or sshj)
      */
     fun create(
         logger: Logger,
-        preferNative: Boolean = true
+        implementationType: SSHImplementationType = SSHImplementationType.AUTO
     ): SSHClient
     
     /**

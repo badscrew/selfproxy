@@ -5,12 +5,17 @@ import com.sshtunnel.db.DatabaseDriverFactory
 import com.sshtunnel.db.SSHTunnelDatabase
 import com.sshtunnel.repository.ProfileRepository
 import com.sshtunnel.repository.ProfileRepositoryImpl
+import com.sshtunnel.android.data.SettingsRepository
 import com.sshtunnel.ssh.AndroidSSHClient
+import com.sshtunnel.ssh.AndroidSSHClientFactory
 import com.sshtunnel.ssh.SSHClient
+import com.sshtunnel.ssh.SSHClientFactory
 import com.sshtunnel.ssh.SSHConnectionManager
 import com.sshtunnel.ssh.SSHConnectionManagerImpl
 import com.sshtunnel.storage.AndroidCredentialStore
 import com.sshtunnel.storage.CredentialStore
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import com.sshtunnel.repository.AppRoutingRepository
 import com.sshtunnel.repository.AppRoutingRepositoryImpl
 import com.sshtunnel.vpn.AndroidVpnTunnelProvider
@@ -51,8 +56,21 @@ object DatabaseModule {
     
     @Provides
     @Singleton
-    fun provideSSHClient(logger: com.sshtunnel.logging.Logger): SSHClient {
-        return AndroidSSHClient(logger)
+    fun provideSSHClientFactory(@ApplicationContext context: Context): SSHClientFactory {
+        return AndroidSSHClientFactory(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSSHClient(
+        factory: SSHClientFactory,
+        settingsRepository: SettingsRepository,
+        logger: com.sshtunnel.logging.Logger
+    ): SSHClient {
+        // Get the user's SSH implementation preference
+        // Note: This is a blocking call, but it's only done once at app startup
+        val settings = runBlocking { settingsRepository.settingsFlow.first() }
+        return factory.create(logger, settings.sshImplementationType)
     }
     
     @Provides
