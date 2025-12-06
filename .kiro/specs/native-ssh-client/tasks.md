@@ -5,6 +5,7 @@
 
 
 
+
   - Download OpenSSH binaries from Termux for all architectures (ARM64, ARM32, x86_64, x86)
   - Create jniLibs directory structure in androidApp module
   - Place binaries and OpenSSL libraries in architecture-specific directories
@@ -12,7 +13,11 @@
   - Document binary sources, versions, and checksums
   - _Requirements: 2.1, 2.2, 2.3, 13.1, 13.2, 13.3_
 
-- [ ] 2. Implement Binary Manager component
+- [x] 2. Implement Binary Manager component
+
+
+
+
   - Create BinaryManager interface and implementation
   - Implement device architecture detection logic
   - Implement binary extraction from APK to private directory
@@ -22,7 +27,9 @@
   - Set executable permissions on extracted binaries
   - _Requirements: 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 12.1, 12.2, 12.3, 12.4, 12.5_
 
-- [ ] 2.1 Write property test for binary manager
+- [x] 2.1 Write property test for binary manager
+
+
   - **Property 1: Native binary selection by architecture**
   - **Property 4: Executable permissions on extracted binary**
   - **Property 20: Binary caching on first extraction**
