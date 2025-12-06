@@ -11,27 +11,42 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.sshtunnel.data.AppRoutingConfig
+import com.sshtunnel.data.ShadowsocksConfig
+import com.sshtunnel.shadowsocks.ShadowsocksClient
+import com.sshtunnel.shadowsocks.ShadowsocksState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import com.sshtunnel.data.RoutingMode as DataRoutingMode
 
 /**
- * Android VPN service that routes device traffic through a SOCKS5 proxy.
+ * Android VPN service that routes device traffic through a Shadowsocks SOCKS5 proxy.
  * 
- * This service creates a TUN interface, intercepts IP packets, and routes them
- * through the local SOCKS5 proxy created by the SSH tunnel.
+ * This service:
+ * 1. Starts a Shadowsocks client to create a local SOCKS5 proxy
+ * 2. Creates a TUN interface to intercept device traffic
+ * 3. Routes all traffic through the SOCKS5 proxy
+ * 4. Handles app exclusion filtering
+ * 5. Prevents DNS leaks by routing DNS through the tunnel
+ * 
+ * Requirements: 3.3, 3.4, 4.1, 4.2, 4.3, 4.5, 5.2, 5.5
  */
 class TunnelVpnService : VpnService() {
     
     private var tunInterface: ParcelFileDescriptor? = null
     private var serviceScope: CoroutineScope? = null
     private var packetRoutingJob: Job? = null
+    private var shadowsocksClient: ShadowsocksClient? = null
+    private var shadowsocksMonitorJob: Job? = null
     
     private var currentConfig: TunnelConfig? = null
+    private var currentShadowsocksConfig: ShadowsocksConfig? = null
     
     override fun onCreate() {
         super.onCreate()
@@ -41,15 +56,58 @@ class TunnelVpnService : VpnService() {
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                val socksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 0)
-                val dnsServers = intent.getStringArrayExtra(EXTRA_DNS_SERVERS)?.toList() ?: emptyList()
+            ACTION_START_WITH_SHADOWSOCKS -> {
+                // Start VPN with Shadowsocks integration
+                val serverHost = intent.getStringExtra(EXTRA_SERVER_HOST) ?: ""
+                val serverPort = intent.getIntExtra(EXTRA_SERVER_PORT, 0)
+                val password = intent.getStringExtra(EXTRA_PASSWORD) ?: ""
+                val cipher = intent.getStringExtra(EXTRA_CIPHER) ?: ""
+                val dnsServers = intent.getStringArrayExtra(EXTRA_DNS_SERVERS)?.toList() ?: listOf("8.8.8.8", "8.8.4.4")
                 val excludedApps = intent.getStringArrayExtra(EXTRA_EXCLUDED_APPS)?.toSet() ?: emptySet()
                 val routingMode = intent.getStringExtra(EXTRA_ROUTING_MODE)?.let {
-                    RoutingMode.valueOf(it)
-                } ?: RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
+                    DataRoutingMode.valueOf(it)
+                } ?: DataRoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
                 val mtu = intent.getIntExtra(EXTRA_MTU, 1500)
-                val sessionName = intent.getStringExtra(EXTRA_SESSION_NAME) ?: "SSH Tunnel Proxy"
+                val sessionName = intent.getStringExtra(EXTRA_SESSION_NAME) ?: "Shadowsocks VPN"
+                
+                // Parse cipher method
+                val cipherMethod = try {
+                    com.sshtunnel.data.CipherMethod.valueOf(cipher)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Invalid cipher method: $cipher")
+                    updateProviderState(TunnelState.Error("Invalid cipher method"))
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                
+                val shadowsocksConfig = ShadowsocksConfig(
+                    serverHost = serverHost,
+                    serverPort = serverPort,
+                    password = password,
+                    cipher = cipherMethod
+                )
+                
+                val tunnelConfig = TunnelConfig(
+                    socksPort = 0, // Will be set after Shadowsocks starts
+                    dnsServers = dnsServers,
+                    routingConfig = RoutingConfig(excludedApps, routingMode),
+                    mtu = mtu,
+                    sessionName = sessionName
+                )
+                
+                startTunnelWithShadowsocks(shadowsocksConfig, tunnelConfig)
+            }
+            
+            ACTION_START -> {
+                // Legacy action for starting with existing SOCKS port
+                val socksPort = intent.getIntExtra(EXTRA_SOCKS_PORT, 0)
+                val dnsServers = intent.getStringArrayExtra(EXTRA_DNS_SERVERS)?.toList() ?: listOf("8.8.8.8", "8.8.4.4")
+                val excludedApps = intent.getStringArrayExtra(EXTRA_EXCLUDED_APPS)?.toSet() ?: emptySet()
+                val routingMode = intent.getStringExtra(EXTRA_ROUTING_MODE)?.let {
+                    DataRoutingMode.valueOf(it)
+                } ?: DataRoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
+                val mtu = intent.getIntExtra(EXTRA_MTU, 1500)
+                val sessionName = intent.getStringExtra(EXTRA_SESSION_NAME) ?: "Shadowsocks VPN"
                 
                 val config = TunnelConfig(
                     socksPort = socksPort,
@@ -69,8 +127,8 @@ class TunnelVpnService : VpnService() {
             ACTION_UPDATE_ROUTING -> {
                 val excludedApps = intent.getStringArrayExtra(EXTRA_EXCLUDED_APPS)?.toSet() ?: emptySet()
                 val routingMode = intent.getStringExtra(EXTRA_ROUTING_MODE)?.let {
-                    RoutingMode.valueOf(it)
-                } ?: RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
+                    DataRoutingMode.valueOf(it)
+                } ?: DataRoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
                 
                 updateRouting(RoutingConfig(excludedApps, routingMode))
             }
@@ -79,6 +137,129 @@ class TunnelVpnService : VpnService() {
         return START_STICKY
     }
     
+    /**
+     * Starts VPN tunnel with Shadowsocks integration.
+     * 
+     * This method:
+     * 1. Starts the Shadowsocks client to create a local SOCKS5 proxy
+     * 2. Waits for the proxy to be ready
+     * 3. Creates the TUN interface with proper DNS and routing configuration
+     * 4. Starts packet routing through the SOCKS5 proxy
+     * 
+     * Requirements: 3.3, 3.4, 4.1, 4.2, 4.3, 4.5
+     */
+    private fun startTunnelWithShadowsocks(
+        shadowsocksConfig: ShadowsocksConfig,
+        tunnelConfig: TunnelConfig
+    ) {
+        serviceScope?.launch {
+            try {
+                Log.d(TAG, "Starting VPN tunnel with Shadowsocks")
+                
+                // Store configs
+                currentShadowsocksConfig = shadowsocksConfig
+                currentConfig = tunnelConfig
+                
+                // Get Shadowsocks client (injected via AndroidVpnTunnelProvider)
+                val client = Companion.shadowsocksClient
+                if (client == null) {
+                    Log.e(TAG, "Shadowsocks client not initialized")
+                    updateProviderState(TunnelState.Error("Shadowsocks client not available"))
+                    stopSelf()
+                    return@launch
+                }
+                
+                // Store client reference for this service instance
+                shadowsocksClient = client
+                
+                // Start Shadowsocks client
+                Log.d(TAG, "Starting Shadowsocks client")
+                val result = client.start(shadowsocksConfig)
+                
+                if (result.isFailure) {
+                    val error = result.exceptionOrNull()
+                    Log.e(TAG, "Failed to start Shadowsocks: ${error?.message}", error)
+                    updateProviderState(TunnelState.Error("Failed to start Shadowsocks: ${error?.message}", error))
+                    stopSelf()
+                    return@launch
+                }
+                
+                val socksPort = result.getOrThrow()
+                Log.d(TAG, "Shadowsocks started on port $socksPort")
+                
+                // Update tunnel config with actual SOCKS port
+                val updatedConfig = tunnelConfig.copy(socksPort = socksPort)
+                currentConfig = updatedConfig
+                
+                // Monitor Shadowsocks state
+                startShadowsocksMonitoring(client)
+                
+                // Create TUN interface with DNS leak prevention
+                tunInterface = createTunInterface(updatedConfig)
+                
+                if (tunInterface == null) {
+                    Log.e(TAG, "Failed to create TUN interface")
+                    client.stop()
+                    updateProviderState(TunnelState.Error("Failed to create TUN interface"))
+                    stopSelf()
+                    return@launch
+                }
+                
+                // Start foreground service with notification
+                startForeground(NOTIFICATION_ID, createNotification(updatedConfig))
+                
+                // Update state
+                updateProviderState(TunnelState.Active)
+                
+                // Start packet routing
+                startPacketRouting(socksPort)
+                
+                Log.d(TAG, "VPN tunnel with Shadowsocks started successfully")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting tunnel with Shadowsocks", e)
+                shadowsocksClient?.let { client ->
+                    serviceScope?.launch { client.stop() }
+                }
+                updateProviderState(TunnelState.Error("Failed to start tunnel: ${e.message}", e))
+                stopSelf()
+            }
+        }
+    }
+    
+    /**
+     * Monitors Shadowsocks client state and handles errors.
+     * 
+     * Requirements: 3.5
+     */
+    private fun startShadowsocksMonitoring(client: ShadowsocksClient) {
+        shadowsocksMonitorJob?.cancel()
+        shadowsocksMonitorJob = serviceScope?.launch {
+            client.observeState().collectLatest { state ->
+                when (state) {
+                    is ShadowsocksState.Error -> {
+                        Log.e(TAG, "Shadowsocks error: ${state.message}")
+                        updateProviderState(TunnelState.Error("Shadowsocks error: ${state.message}", state.cause))
+                        stopTunnel()
+                    }
+                    is ShadowsocksState.Idle -> {
+                        Log.w(TAG, "Shadowsocks became idle unexpectedly")
+                        updateProviderState(TunnelState.Error("Shadowsocks stopped unexpectedly"))
+                        stopTunnel()
+                    }
+                    else -> {
+                        // Running or Starting states are normal
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Starts VPN tunnel with an existing SOCKS port (legacy method).
+     * 
+     * Requirements: 3.3, 3.4, 4.1, 4.2, 4.3
+     */
     private fun startTunnel(config: TunnelConfig) {
         serviceScope?.launch {
             try {
@@ -116,8 +297,29 @@ class TunnelVpnService : VpnService() {
         }
     }
     
+    /**
+     * Stops the VPN tunnel and cleans up all resources.
+     * 
+     * Requirements: 3.4
+     */
     private fun stopTunnel() {
         Log.d(TAG, "Stopping VPN tunnel")
+        
+        // Cancel Shadowsocks monitoring
+        shadowsocksMonitorJob?.cancel()
+        shadowsocksMonitorJob = null
+        
+        // Stop Shadowsocks client
+        shadowsocksClient?.let { client ->
+            serviceScope?.launch {
+                try {
+                    client.stop()
+                    Log.d(TAG, "Shadowsocks client stopped")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error stopping Shadowsocks client", e)
+                }
+            }
+        }
         
         // Cancel packet routing
         packetRoutingJob?.cancel()
@@ -130,6 +332,10 @@ class TunnelVpnService : VpnService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error closing TUN interface", e)
         }
+        
+        // Clear configs
+        currentConfig = null
+        currentShadowsocksConfig = null
         
         // Update state
         updateProviderState(TunnelState.Inactive)
@@ -185,28 +391,48 @@ class TunnelVpnService : VpnService() {
         }
     }
     
+    /**
+     * Creates the TUN interface with proper DNS and routing configuration.
+     * 
+     * This method implements:
+     * - DNS leak prevention by routing DNS through the tunnel (Requirement 4.3, 4.5)
+     * - App exclusion filtering (Requirement 5.2, 5.5)
+     * - Proper routing for all traffic (Requirement 4.1, 4.2)
+     * 
+     * Requirements: 4.1, 4.2, 4.3, 4.5, 5.2, 5.5
+     */
     private fun createTunInterface(config: TunnelConfig): ParcelFileDescriptor? {
         return try {
             val builder = Builder()
                 .setSession(config.sessionName)
                 .addAddress("10.0.0.2", 24) // VPN interface address
-                .addRoute("0.0.0.0", 0) // Route all traffic
+                .addRoute("0.0.0.0", 0) // Route all traffic (Requirement 4.1, 4.2)
                 .setMtu(config.mtu)
                 .setBlocking(true)
             
-            // Add DNS servers
+            // Add DNS servers to prevent DNS leaks (Requirement 4.3, 4.5)
+            // All DNS queries will be routed through the VPN tunnel
             config.dnsServers.forEach { dns ->
                 builder.addDnsServer(dns)
+                Log.d(TAG, "Added DNS server: $dns")
             }
             
-            // Configure app routing
+            // Configure app routing (Requirement 5.2, 5.5)
             configureAppRouting(builder, config.routingConfig)
             
             // Set configure intent (for notification tap)
             builder.setConfigureIntent(createConfigIntent())
             
             // Establish the VPN
-            builder.establish()
+            val vpn = builder.establish()
+            
+            if (vpn != null) {
+                Log.d(TAG, "TUN interface created successfully")
+            } else {
+                Log.e(TAG, "Failed to establish VPN - permission may have been revoked")
+            }
+            
+            vpn
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create TUN interface", e)
@@ -214,10 +440,18 @@ class TunnelVpnService : VpnService() {
         }
     }
     
+    /**
+     * Configures app-specific routing for the VPN.
+     * 
+     * Implements per-app routing to allow users to exclude specific apps from the tunnel.
+     * Always excludes the VPN app itself to prevent routing loops.
+     * 
+     * Requirements: 5.2, 5.5
+     */
     private fun configureAppRouting(builder: Builder, config: RoutingConfig) {
         when (config.routingMode) {
-            RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED -> {
-                // Exclude specified apps from the tunnel
+            DataRoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED -> {
+                // Exclude specified apps from the tunnel (Requirement 5.2)
                 config.excludedApps.forEach { packageName ->
                     try {
                         builder.addDisallowedApplication(packageName)
@@ -238,7 +472,7 @@ class TunnelVpnService : VpnService() {
                 }
             }
             
-            RoutingMode.ROUTE_ONLY_INCLUDED -> {
+            DataRoutingMode.ROUTE_ONLY_INCLUDED -> {
                 // In this mode, we need to exclude all apps except the ones in the "included" list
                 // The "excludedApps" set in this mode actually contains the apps to INCLUDE
                 // We need to get all installed apps and exclude everything except the included ones
@@ -438,15 +672,26 @@ class TunnelVpnService : VpnService() {
         
         // Actions
         const val ACTION_START = "com.sshtunnel.vpn.START"
+        const val ACTION_START_WITH_SHADOWSOCKS = "com.sshtunnel.vpn.START_WITH_SHADOWSOCKS"
         const val ACTION_STOP = "com.sshtunnel.vpn.STOP"
         const val ACTION_UPDATE_ROUTING = "com.sshtunnel.vpn.UPDATE_ROUTING"
         
         // Extras
         const val EXTRA_SOCKS_PORT = "socks_port"
+        const val EXTRA_SERVER_HOST = "server_host"
+        const val EXTRA_SERVER_PORT = "server_port"
+        const val EXTRA_PASSWORD = "password"
+        const val EXTRA_CIPHER = "cipher"
         const val EXTRA_DNS_SERVERS = "dns_servers"
         const val EXTRA_EXCLUDED_APPS = "excluded_apps"
         const val EXTRA_ROUTING_MODE = "routing_mode"
         const val EXTRA_MTU = "mtu"
         const val EXTRA_SESSION_NAME = "session_name"
+        
+        /**
+         * Shadowsocks client instance injected by AndroidVpnTunnelProvider.
+         * This is set before starting the service.
+         */
+        internal var shadowsocksClient: ShadowsocksClient? = null
     }
 }

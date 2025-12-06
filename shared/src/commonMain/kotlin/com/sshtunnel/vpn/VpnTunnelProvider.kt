@@ -1,5 +1,6 @@
 package com.sshtunnel.vpn
 
+import com.sshtunnel.data.RoutingMode
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -74,21 +75,6 @@ data class RoutingConfig(
     val excludedApps: Set<String> = emptySet(),
     val routingMode: RoutingMode = RoutingMode.ROUTE_ALL_EXCEPT_EXCLUDED
 )
-
-/**
- * Routing mode for the VPN tunnel.
- */
-enum class RoutingMode {
-    /**
-     * Route all apps through the tunnel except those in the excluded list.
-     */
-    ROUTE_ALL_EXCEPT_EXCLUDED,
-    
-    /**
-     * Only route apps in the included list through the tunnel.
-     */
-    ROUTE_ONLY_INCLUDED
-}
 
 /**
  * Represents the current state of the VPN tunnel.

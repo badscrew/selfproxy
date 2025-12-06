@@ -135,6 +135,7 @@
 
 
 
+
   - Create PacketRouter class for packet handling
   - Implement packet reading from TUN interface
   - Implement packet parsing (IP, TCP, UDP headers)
@@ -151,7 +152,11 @@
   - Test UDP header extraction
   - _Requirements: 4.1, 4.2_
 
-- [ ] 9. Implement VPN Service for Shadowsocks
+- [x] 9. Implement VPN Service for Shadowsocks
+
+
+
+
   - Update TunnelVpnService to work with Shadowsocks
   - Implement TUN interface creation with proper routing
   - Implement DNS server configuration to prevent leaks
@@ -160,11 +165,15 @@
   - Add foreground notification for VPN status
   - _Requirements: 3.3, 3.4, 4.1, 4.2, 4.3, 4.5, 5.2, 5.5_
 
-- [ ] 9.1 Write property test for traffic routing
+- [x] 9.1 Write property test for traffic routing
+
+
   - **Property 9: VPN tunnel routes all traffic when active**
   - **Validates: Requirements 4.1, 4.2, 4.3**
 
-- [ ] 9.2 Write property test for app exclusion
+- [x] 9.2 Write property test for app exclusion
+
+
   - **Property 10: Excluded apps bypass VPN tunnel**
   - **Validates: Requirements 5.2**
 

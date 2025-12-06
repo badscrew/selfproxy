@@ -3,6 +3,8 @@ package com.sshtunnel.vpn
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import com.sshtunnel.data.ShadowsocksConfig
+import com.sshtunnel.shadowsocks.ShadowsocksClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,12 +14,73 @@ import kotlinx.coroutines.flow.asStateFlow
  * 
  * This class manages the lifecycle of the TunnelVpnService and provides
  * a bridge between the shared business logic and the Android VPN service.
+ * 
+ * Supports both legacy SOCKS5 proxy mode and Shadowsocks integration.
  */
 class AndroidVpnTunnelProvider(
-    private val context: Context
+    private val context: Context,
+    private val shadowsocksClient: ShadowsocksClient? = null
 ) : VpnTunnelProvider {
     
     private val _tunnelState = MutableStateFlow<TunnelState>(TunnelState.Inactive)
+    
+    /**
+     * Starts VPN tunnel with Shadowsocks integration.
+     * 
+     * Requirements: 3.3, 3.4, 4.1, 4.2, 4.3, 4.5, 5.2, 5.5
+     */
+    suspend fun startTunnelWithShadowsocks(
+        shadowsocksConfig: ShadowsocksConfig,
+        tunnelConfig: TunnelConfig
+    ): Result<Unit> {
+        return try {
+            // Check if VPN permission is granted
+            val prepareIntent = VpnService.prepare(context)
+            if (prepareIntent != null) {
+                return Result.failure(
+                    VpnError.PermissionDenied(
+                        "VPN permission not granted. Please request permission first."
+                    )
+                )
+            }
+            
+            // Check if tunnel is already active
+            if (_tunnelState.value is TunnelState.Active) {
+                return Result.failure(
+                    VpnError.AlreadyActive("VPN tunnel is already active")
+                )
+            }
+            
+            // Update state
+            _tunnelState.value = TunnelState.Starting
+            
+            // Inject Shadowsocks client into service
+            TunnelVpnService.shadowsocksClient = shadowsocksClient
+            
+            // Start the VPN service with Shadowsocks
+            val intent = Intent(context, TunnelVpnService::class.java).apply {
+                action = TunnelVpnService.ACTION_START_WITH_SHADOWSOCKS
+                putExtra(TunnelVpnService.EXTRA_SERVER_HOST, shadowsocksConfig.serverHost)
+                putExtra(TunnelVpnService.EXTRA_SERVER_PORT, shadowsocksConfig.serverPort)
+                putExtra(TunnelVpnService.EXTRA_PASSWORD, shadowsocksConfig.password)
+                putExtra(TunnelVpnService.EXTRA_CIPHER, shadowsocksConfig.cipher.name)
+                putExtra(TunnelVpnService.EXTRA_DNS_SERVERS, tunnelConfig.dnsServers.toTypedArray())
+                putExtra(TunnelVpnService.EXTRA_EXCLUDED_APPS, tunnelConfig.routingConfig.excludedApps.toTypedArray())
+                putExtra(TunnelVpnService.EXTRA_ROUTING_MODE, tunnelConfig.routingConfig.routingMode.name)
+                putExtra(TunnelVpnService.EXTRA_MTU, tunnelConfig.mtu)
+                putExtra(TunnelVpnService.EXTRA_SESSION_NAME, tunnelConfig.sessionName)
+            }
+            
+            context.startService(intent)
+            
+            // State will be updated by the service via callback
+            Result.success(Unit)
+            
+        } catch (e: Exception) {
+            _tunnelState.value = TunnelState.Error("Failed to start tunnel", e)
+            Result.failure(VpnError.TunnelCreationFailed("Failed to start VPN tunnel with Shadowsocks", e))
+        }
+    }
     
     override suspend fun startTunnel(config: TunnelConfig): Result<Unit> {
         return try {
@@ -41,7 +104,7 @@ class AndroidVpnTunnelProvider(
             // Update state
             _tunnelState.value = TunnelState.Starting
             
-            // Start the VPN service
+            // Start the VPN service (legacy mode with existing SOCKS port)
             val intent = Intent(context, TunnelVpnService::class.java).apply {
                 action = TunnelVpnService.ACTION_START
                 putExtra(TunnelVpnService.EXTRA_SOCKS_PORT, config.socksPort)
